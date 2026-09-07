@@ -32,8 +32,7 @@ class SimulatedPlcData:
 
 
 class PlcCommunicationProcess(multiprocessing.Process):
-    def __init__(self, raw_data_queue, pulse_queue, control_queue, machine_data_queue=None,
-                 strategy_name="frame_by_frame", heartbeat=None, heartbeat_interval_s: float = 1.0):
+    def __init__(self, raw_data_queue, pulse_queue, control_queue, machine_data_queue=None, strategy_name="frame_by_frame", heartbeat=None, heartbeat_interval_s: float = 1.0):
         super().__init__()
         self.raw_data_queue = raw_data_queue
         self.pulse_queue = pulse_queue
@@ -93,7 +92,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
             "out_front_x_offset", "out_after_x_offset", "in_front_x_offset", "in_after_x_offset",
             "origin_pos", "out_up_y_offset", "out_down_y_offset",
             "in_up_y_offset", "in_down_y_offset", "out_z_front_offset", "out_z_after_offset",
-            "in_z_front_offset", "in_z_after_offset", "z_back_speed",
+            "search_front_z_offset", "search_after_z_offset", "in_z_front_offset", "in_z_after_offset", "z_back_speed",
         }
 
         # 计算设备数量
@@ -137,8 +136,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
         return forward_gap - ring_size
 
     @staticmethod
-    def create(strategy_name, raw_data_queue, pulse_queue, control_queue, machine_data_queue=None,
-               heartbeat=None, heartbeat_interval_s: float = 1.0):
+    def create(strategy_name, raw_data_queue, pulse_queue, control_queue, machine_data_queue=None, heartbeat=None, heartbeat_interval_s: float = 1.0):
         """
         工厂方法：根据采集策略创建 PlcCommunicationProcess 实例
         Args:
@@ -164,14 +162,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
             )
         else:
             # continuous_bidirectional 和 frame_by_frame 使用 raw_data_queue
-            return PlcCommunicationProcess(
-                raw_data_queue,
-                pulse_queue,
-                control_queue,
-                strategy_name=strategy_name,
-                heartbeat=heartbeat,
-                heartbeat_interval_s=heartbeat_interval_s,
-            )
+            return PlcCommunicationProcess(raw_data_queue, pulse_queue, control_queue, strategy_name=strategy_name, heartbeat=heartbeat, heartbeat_interval_s=heartbeat_interval_s)
 
     def run(self):
         logger.info(f"PlcCommunicationProcess.run() entered, pid={os.getpid()}")
@@ -253,10 +244,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
 
         flat_cfg = cfg.get("flat")
         if isinstance(flat_cfg, dict):
-            runtime_cfg["flat"] = {
-                key: value for key, value in flat_cfg.items()
-                if key in self.runtime_param_keys
-            }
+            runtime_cfg["flat"] = {key: value for key, value in flat_cfg.items() if key in self.runtime_param_keys}
         return runtime_cfg
 
     def _create_frame_queue_manager(self) -> FrameQueueManager:
@@ -353,13 +341,8 @@ class PlcCommunicationProcess(multiprocessing.Process):
                     # 当前 fifo 使用 pulse 换算后的 chaincountcm，需与 pulse 同步回绕
                     pulse_step = max(1, int(round(float(self.fifo_unit_mm) * float(self.pulse_to_mm))))
 
-                    self.simulated_plc_data.ChainPulse = self._advance_simulated_pulse(
-                        self.simulated_plc_data.ChainPulse,
-                        pulse_step,
-                    )
-                    self.simulated_plc_data.ChainCountCM = self._pulse_to_chaincountcm(
-                        self.simulated_plc_data.ChainPulse
-                    )
+                    self.simulated_plc_data.ChainPulse = self._advance_simulated_pulse(self.simulated_plc_data.ChainPulse, pulse_step)
+                    self.simulated_plc_data.ChainCountCM = self._pulse_to_chaincountcm(self.simulated_plc_data.ChainPulse)
 
                     self.plc_data = self.simulated_plc_data
                     self.last_simulation_time = current_time
@@ -413,16 +396,20 @@ class PlcCommunicationProcess(multiprocessing.Process):
 
         status = "stopped"
         if len(self.pulse_history) == 5:
-            min_val = min(self.pulse_history)
-            max_val = max(self.pulse_history)
-            diff = max_val - min_val
+            pulse_delta = float(self.pulse_history[-1]) - float(self.pulse_history[0])
+            half_pulse_range = float(self.max_pulse) / 2.0
+            # 脉冲计数由最大值回到0时仍是正向运动，例如159997 -> 4的实际增量为7。
+            if pulse_delta < -half_pulse_range:
+                pulse_delta += float(self.max_pulse)
+            elif pulse_delta > half_pulse_range:
+                pulse_delta -= float(self.max_pulse)
             # logger.info(f"pulse_history: {self.pulse_history}")
             # 停止
             if len(set(self.pulse_history)) == 1:
                 status = "stopped"
-            elif diff > self.diff_start_pulse and self.pulse_history[0] < self.pulse_history[-1]:
+            elif pulse_delta > self.diff_start_pulse:
                 status = "moving_forward"
-            elif diff > self.diff_start_pulse and self.pulse_history[0] > self.pulse_history[-1]:
+            elif pulse_delta < -self.diff_start_pulse:
                 status = "moving_reverse"
 
         last_status = getattr(self, "chain_motion_status", None)
@@ -500,9 +487,27 @@ class PlcCommunicationProcess(multiprocessing.Process):
                         block_data = self._build_machine_workpiece(base_block_data, sn)
                         frame_item = {"stop_pulse": stop_pulse, "data": block_data}
                         logger.info(f"Push complete workpiece data to queue: direction={direction}, sn={sn}, stop_pulse={stop_pulse}, block_data={block_data}")
-                        self.frame_queue_manager.push_workpiece(direction=direction, sn=sn, data=frame_item)
+                        success, insert_index, shifted = self.frame_queue_manager.push_workpiece(direction=direction, sn=sn, data=frame_item)
+                        if success and insert_index is not None:
+                            self._update_workpiece_tracking_after_push(direction, sn, insert_index, shifted)
         except Exception as e:
             logger.error(f"Error processing machine queue: {str(e)}")
+
+    def _update_workpiece_tracking_after_push(self, direction: str, sn: int, insert_index: int, shifted: bool):
+        """工件队列入队后同步位置跟踪索引，并让新工件首次从自身stop_pulse开始累计。"""
+        direction_mm_map = self.last_workpiece_chain_mm.setdefault(direction, {})
+        sn_mm_map = direction_mm_map.get(sn, {})
+        if shifted:
+            sn_mm_map = {int(old_idx) - 1: value for old_idx, value in sn_mm_map.items() if int(old_idx) > 0}
+        sn_mm_map.pop(int(insert_index), None)
+        direction_mm_map[sn] = sn_mm_map
+
+        direction_residual_map = self.last_workpiece_chain_mm_residual.setdefault(direction, {})
+        sn_residual_map = direction_residual_map.get(sn, {})
+        if shifted:
+            sn_residual_map = {int(old_idx) - 1: value for old_idx, value in sn_residual_map.items() if int(old_idx) > 0}
+        sn_residual_map.pop(int(insert_index), None)
+        direction_residual_map[sn] = sn_residual_map
 
     def _build_machine_workpiece(self, block_data, sn: int):
         if not isinstance(block_data, BlockData):
@@ -513,21 +518,14 @@ class PlcCommunicationProcess(multiprocessing.Process):
             return copy.deepcopy(block_data)
 
         machine_block = copy.deepcopy(block_data)
-        return self.gun_distributor.distribute_for_machine(
-            blockdata=machine_block,
-            machine_cfg=machine_cfg,
-            machine_id=int(sn),
-        )
+        return self.gun_distributor.distribute_for_machine(blockdata=machine_block, machine_cfg=machine_cfg, machine_id=int(sn))
 
     def _handle_frame_packet_received(self, fifo_data: dict, repeat_count: int):
         self.current_cycle_raw_shift_steps += repeat_count
         was_timeout_active = self.raw_data_timeout_active
         self._reset_raw_data_timeout_timer(fifo=fifo_data.get("fifo", None))
         if was_timeout_active:
-            msg = (
-                f"激光采样数据已恢复，最新FIFO={self.last_raw_frame_fifo}，"
-                f"超时阈值={self.raw_data_timeout_s}s"
-            )
+            msg = f"激光采样数据已恢复，最新FIFO={self.last_raw_frame_fifo}，超时阈值={self.raw_data_timeout_s}s"
             print(msg)
             logger.info(msg)
             self.raw_data_timeout_active = False
@@ -557,10 +555,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
 
         fifo_delta = self._get_fifo_step_delta(self.last_synced_chain_fifo, current_fifo)
         if fifo_delta < 0:
-            logger.warning(
-                f"PLC fifo reversed unexpectedly: last_synced={self.last_synced_chain_fifo}, cur={current_fifo}, "
-                f"reset sync base"
-            )
+            logger.warning(f"PLC fifo reversed unexpectedly: last_synced={self.last_synced_chain_fifo}, cur={current_fifo}, reset sync base")
             self.last_synced_chain_fifo = current_fifo
             self.current_cycle_raw_shift_steps = 0
             return
@@ -658,10 +653,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
         if not self.raw_data_timeout_active:
             self.raw_data_timeout_active = True
             self._clear_all_frame_queues()
-            msg = (
-                f"链条运行中已有 {elapsed:.3f}s 未收到新的激光帧，"
-                f"已清空帧队列并请求停链保护，最后一次FIFO={self.last_raw_frame_fifo}"
-            )
+            msg = f"链条运行中已有 {elapsed:.3f}s 未收到新的激光帧，已清空帧队列并请求停链保护，最后一次FIFO={self.last_raw_frame_fifo}"
             print(msg)
             logger.error(msg)
 
