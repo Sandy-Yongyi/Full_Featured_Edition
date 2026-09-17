@@ -6,15 +6,16 @@ import os
 from model.plot.PointCloudCanvas import PointCloudCanvas
 
 
-BG_COLOR_LIGHT_GREEN = wx.Colour(240, 250, 250)
+# 颜色常量定义
+BG_COLOR_LIGHT_GREEN = wx.Colour(240, 250, 250)  # 浅绿色背景
 BG_COLOR_WHITE = wx.WHITE
-BG_COLOR_GREEN = wx.Colour(107, 175, 107)
-BG_COLOR_RED = wx.Colour(244, 100, 80)
-BG_COLOR_BLUE = wx.Colour(150, 230, 244)
+BG_COLOR_GREEN = wx.Colour(107, 175, 107)  # 绿色（开始按钮）
+BG_COLOR_RED = wx.Colour(244, 100, 80)  # 红色（结束按钮）
+BG_COLOR_BLUE = wx.Colour(150, 230, 244)  # 钻石蓝（参数按钮）
 
 
 class BorderedPanel(wx.Panel):
-    """带黑色边框的面板。"""
+    """带明显黑色边框的面板"""
 
     def __init__(self, parent, label="", bg_color=None):
         super().__init__(parent)
@@ -24,61 +25,69 @@ class BorderedPanel(wx.Panel):
         self.Bind(wx.EVT_PAINT, self._on_paint)
 
     def _on_paint(self, event):
+        """绘制黑色边框"""
         dc = wx.PaintDC(self)
         rect = self.GetClientRect()
 
+        # 绘制背景
         dc.SetBrush(wx.Brush(self.bg_color))
         dc.DrawRectangle(rect)
 
+        # 绘制粗黑色边框（3像素）
         dc.SetPen(wx.Pen(wx.BLACK, 3))
         dc.SetBrush(wx.TRANSPARENT_BRUSH)
         dc.DrawRectangle(0, 0, rect.width, rect.height)
 
+        # 绘制标签（如果有）
         if self.label:
-            font = wx.Font(11, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
+            font = wx.Font(11, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)  # 改为普通字体，不加粗
             dc.SetFont(font)
             dc.SetTextForeground(wx.BLACK)
             text_width, text_height = dc.GetTextExtent(self.label)
+
+            # 标签位置：顶部左侧，内缩一点，向下间隔10像素
             label_x = 15
             label_y = 15
-            bg_margin = 3
 
+            # 在标签周围地方画白色背景来遮挡边框
+            bg_margin = 3  # 标签周围的白色边距
             dc.SetBrush(wx.Brush(self.bg_color))
             dc.SetPen(wx.TRANSPARENT_PEN)
-            dc.DrawRectangle(
-                label_x - bg_margin,
-                label_y - bg_margin,
-                text_width + 2 * bg_margin,
-                text_height + 2 * bg_margin,
-            )
+            dc.DrawRectangle(label_x - bg_margin, label_y - bg_margin, text_width + 2 * bg_margin, text_height + 2 * bg_margin)
+
+            # 绘制标签文字
             dc.DrawText(self.label, label_x, label_y)
 
 
 class ModernButton(wx.Button):
-    """项目原有的彩色按钮。"""
+    """现代化按钮类 - 所有按钮显示darker效果和边框"""
 
     def __init__(self, parent, label, size=wx.Size(150, 50), bg_color=None, text_color=None):
         super().__init__(parent, label=label, size=size)
-        self.bg_color = bg_color or BG_COLOR_BLUE
-        self.text_color = text_color or wx.BLACK
-        self.disabled_color = wx.Colour(180, 180, 180)
+        self.bg_color = bg_color or BG_COLOR_BLUE  # 原始背景色
+        self.text_color = text_color or wx.BLACK  # 文字颜色
+        self.disabled_color = wx.Colour(180, 180, 180)  # 禁用时的灰色
         self.visual_active = True
         self.current_text_color = self.text_color
 
+        # 使用普通字体（不加粗）来避免文字重叠
         font = wx.Font(13, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
         self.SetFont(font)
+
+        # 绑定Paint事件
         self.Bind(wx.EVT_PAINT, self._on_paint)
+
+        # 初始化颜色
         self._update_button_appearance()
 
     def _update_button_appearance(self):
+        """根据启用/禁用状态更新按钮外观"""
         if self.IsEnabled() and self.visual_active:
-            self.current_bg = wx.Colour(
-                max(0, self.bg_color.red - 20),
-                max(0, self.bg_color.green - 20),
-                max(0, self.bg_color.blue - 20),
-            )
+            # 启用时：使用darker效果（减20）
+            self.current_bg = wx.Colour(max(0, self.bg_color.red - 20), max(0, self.bg_color.green - 20), max(0, self.bg_color.blue - 20))
             self.current_text_color = self.text_color
         else:
+            # 禁用时：使用灰色
             self.current_bg = self.disabled_color
             self.current_text_color = wx.BLACK
 
@@ -86,38 +95,44 @@ class ModernButton(wx.Button):
         self.SetForegroundColour(self.current_text_color)
 
     def SetVisualActive(self, active=True):
+        """仅控制按钮是否显示彩色外观，不影响点击能力"""
         self.visual_active = active
         self._update_button_appearance()
         self.Refresh()
 
     def Enable(self, enable=True):
+        """重写Enable方法以更新按钮外观"""
         super().Enable(enable)
         self._update_button_appearance()
         self.Refresh()
 
     def _on_paint(self, event):
+        """自定义绘制 - 显示darker效果和边框"""
         dc = wx.PaintDC(self)
         rect = self.GetClientRect()
 
+        # 绘制主背景
         dc.SetBrush(wx.Brush(self.current_bg))
         dc.SetPen(wx.Pen(self.current_bg))
         dc.DrawRectangle(rect)
 
-        border_color = wx.Colour(
-            max(0, self.current_bg.red - 30),
-            max(0, self.current_bg.green - 30),
-            max(0, self.current_bg.blue - 30),
-        )
+        # 绘制深色边框（3像素）给按钮凹陷感
+        border_color = wx.Colour(max(0, self.current_bg.red - 30), max(0, self.current_bg.green - 30), max(0, self.current_bg.blue - 30))
         dc.SetPen(wx.Pen(border_color, 2))
         dc.SetBrush(wx.TRANSPARENT_BRUSH)
         dc.DrawRectangle(0, 0, rect.width - 1, rect.height - 1)
 
+        # 获取文字
         label = self.GetLabel()
         font = self.GetFont()
         dc.SetFont(font)
+
+        # 测量文字尺寸
         text_width, text_height = dc.GetTextExtent(label)
         x = (rect.width - text_width) // 2
         y = (rect.height - text_height) // 2
+
+        # 绘制文字
         dc.SetTextForeground(self.current_text_color)
         dc.DrawText(label, x, y)
 
@@ -125,142 +140,177 @@ class ModernButton(wx.Button):
 class MainFrame(wx.Frame):
     def __init__(self, parent):
         super().__init__(parent, title="Joihey Software")
-        self.machine_config_buttons = {}
         self.SetBackgroundColour(BG_COLOR_LIGHT_GREEN)
 
+        # 尝试加载ico图标（如果存在）
         icon_path = os.path.join(os.path.dirname(__file__), "..", "data", "picture", "junhe.ico")
         if os.path.exists(icon_path):
             icon = wx.Icon(icon_path, wx.BITMAP_TYPE_ICO)
             self.SetIcon(icon)
 
         self.InitUI()
+        # 设置窗口为最大化状态（自适应屏幕尺寸）
         self.Maximize(True)
         self._set_control_buttons_active(False)
         self._set_param_buttons_enabled(False)
 
     def InitUI(self):
+        # 创建滚动窗口
         scrolled_window = wx.ScrolledWindow(self)
         scrolled_window.SetScrollRate(20, 20)
         scrolled_window.SetBackgroundColour(BG_COLOR_LIGHT_GREEN)
 
+        # 主面板
         panel = wx.Panel(scrolled_window)
         panel.SetBackgroundColour(BG_COLOR_LIGHT_GREEN)
         main_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
-        left_scrolled = wx.ScrolledWindow(panel, size=wx.Size(430, -1))
+        # ================= Left: Control Panel =================
+        left_scrolled = wx.ScrolledWindow(panel, size=wx.Size(410, -1))
         left_scrolled.SetScrollRate(10, 10)
-        left_scrolled.SetBackgroundColour(BG_COLOR_LIGHT_GREEN)
-        left_scrolled.SetMinSize(wx.Size(430, -1))
+        left_scrolled.SetBackgroundColour(wx.Colour(240, 240, 240))
+        left_scrolled.SetMinSize(wx.Size(410, -1))
+
         left_vbox = wx.BoxSizer(wx.VERTICAL)
 
-        control_card = BorderedPanel(left_scrolled, label="操作控制", bg_color=BG_COLOR_LIGHT_GREEN)
-        control_card_sizer = wx.BoxSizer(wx.VERTICAL)
+        # Control box
+        control_box = wx.StaticBox(left_scrolled, label="Control Panel")
+        control_box_sizer = wx.StaticBoxSizer(control_box, wx.VERTICAL)
+
         btn_sizer1 = wx.BoxSizer(wx.HORIZONTAL)
-        self.start_btn = ModernButton(
-            control_card,
-            label="程序开始运行",
-            size=wx.Size(180, 55),
-            bg_color=BG_COLOR_GREEN,
-            text_color=wx.WHITE,
-        )
-        self.stop_btn = ModernButton(
-            control_card,
-            label="程序结束运行",
-            size=wx.Size(180, 55),
-            bg_color=BG_COLOR_RED,
-            text_color=wx.WHITE,
-        )
-        btn_sizer1.Add(self.start_btn, 0, wx.ALL, 8)
-        btn_sizer1.Add(self.stop_btn, 0, wx.ALL, 8)
-        control_card_sizer.AddSpacer(30)
-        control_card_sizer.Add(btn_sizer1, 0, wx.EXPAND | wx.ALL, 5)
-        control_card.SetSizer(control_card_sizer)
+        self.start_btn = ModernButton(control_box_sizer.GetStaticBox(), label="Start Software", size=wx.Size(180, 40), bg_color=BG_COLOR_GREEN)
+        self.stop_btn = ModernButton(control_box_sizer.GetStaticBox(), label="Stop Software", size=wx.Size(180, 40), bg_color=BG_COLOR_RED)
+        btn_sizer1.Add(self.start_btn, 0, wx.ALL, 5)
+        btn_sizer1.Add(self.stop_btn, 0, wx.ALL, 5)
 
-        param_card = BorderedPanel(left_scrolled, label="参数设置", bg_color=BG_COLOR_LIGHT_GREEN)
-        param_card_sizer = wx.BoxSizer(wx.VERTICAL)
-        status_label = wx.StaticText(param_card, label="         左侧 →                → 右侧")
-        status_label.SetFont(wx.Font(11, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
-        status_label.SetForegroundColour(wx.BLACK)
+        status_sizer1 = wx.BoxSizer(wx.HORIZONTAL)
+        status_label1 = wx.StaticText(control_box_sizer.GetStaticBox(), label="Lidar Scan Position:", size=wx.Size(140, 30))
+        self.chain_pos_text = wx.TextCtrl(control_box_sizer.GetStaticBox(), value="0", size=wx.Size(100, 30))
+        status_label2 = wx.StaticText(control_box_sizer.GetStaticBox(), label="mm", size=wx.Size(50, 30))
+        self.chain_pos_text.Enable(False)
+        status_sizer1.Add(status_label1, 0, wx.ALL, 5)
+        status_sizer1.Add(self.chain_pos_text, 0, wx.ALL, 5)
+        status_sizer1.Add(status_label2, 0, wx.ALL, 5)
 
-        button_rows = (
-            ((0, "左侧顶底设备(SN0)"), (2, "右侧顶底设备(SN2)")),
-            ((1, "左侧二维设备(SN1)"), (3, "右侧二维设备(SN3)")),
-        )
-        button_sizers = []
-        for row in button_rows:
-            row_sizer = wx.BoxSizer(wx.HORIZONTAL)
-            for sn, label in row:
-                button = ModernButton(param_card, label=label, size=wx.Size(180, 50))
-                self.machine_config_buttons[sn] = button
-                row_sizer.Add(button, 0, wx.ALL, 8)
-            button_sizers.append(row_sizer)
+        control_box_sizer.Add(btn_sizer1, 0, wx.ALL, 5)
+        control_box_sizer.Add(status_sizer1, 0, wx.ALL, 5)
 
-        param_card_sizer.AddSpacer(50)
-        param_card_sizer.Add(status_label, 0, wx.EXPAND | wx.ALL, 5)
-        param_card_sizer.AddSpacer(5)
-        for button_sizer in button_sizers:
-            param_card_sizer.Add(button_sizer, 0, wx.EXPAND | wx.ALL, 5)
-        param_card.SetSizer(param_card_sizer)
+        # Parameter box
+        param_box = wx.StaticBox(left_scrolled, label="Parameter Settings")
+        param_box_sizer = wx.StaticBoxSizer(param_box, wx.VERTICAL)
 
-        left_vbox.Add(control_card, 0, wx.EXPAND | wx.ALL, 10)
-        left_vbox.Add(param_card, 0, wx.EXPAND | wx.ALL, 10)
-        left_vbox.AddStretchSpacer()
-        left_scrolled.SetSizer(left_vbox)
+        status_sizer2 = wx.BoxSizer(wx.HORIZONTAL)
+        status_label3 = wx.StaticText(param_box_sizer.GetStaticBox(), label="Lidar Scan Speed:", size=wx.Size(140, 30))
+        self.chain_speed_text = wx.TextCtrl(param_box_sizer.GetStaticBox(), value="25", size=wx.Size(100, 30))
+        status_label4 = wx.StaticText(param_box_sizer.GetStaticBox(), label="mm/s", size=wx.Size(50, 30))
+        status_sizer2.Add(status_label3, 0, wx.ALL, 5)
+        status_sizer2.Add(self.chain_speed_text, 0, wx.ALL, 5)
+        self.chain_speed_text.Enable(False)
+        status_sizer2.Add(status_label4, 0, wx.ALL, 5)
 
-        right_panel = wx.Panel(panel)
-        right_panel.SetBackgroundColour(BG_COLOR_LIGHT_GREEN)
-        right_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        param_box_sizer.Add(status_sizer2, 0, wx.EXPAND | wx.ALL, 5)
+        self.save_setting_btn = ModernButton(param_box_sizer.GetStaticBox(), label="Save setting", size=wx.Size(180, 40), bg_color=BG_COLOR_BLUE)
+        param_box_sizer.Add(self.save_setting_btn, 0, wx.ALIGN_CENTER_HORIZONTAL | wx.ALL, 5)
 
-        display_panel = BorderedPanel(right_panel, label="3D点云画图显示", bg_color=BG_COLOR_LIGHT_GREEN)
-        display_panel.SetMinSize(wx.Size(300, 200))
-        display_sizer = wx.BoxSizer(wx.VERTICAL)
-        self.gl_canvas = PointCloudCanvas(display_panel)
-        display_sizer.AddSpacer(30)
-        display_sizer.Add(self.gl_canvas, 1, wx.EXPAND | wx.ALL, 8)
-        display_panel.SetSizer(display_sizer)
+        # Spray box
+        spray_box = wx.StaticBox(left_scrolled, label="Spraying Control")
+        spray_box_sizer = wx.StaticBoxSizer(spray_box, wx.VERTICAL)
 
-        status_panel = BorderedPanel(right_panel, label="状态输出", bg_color=BG_COLOR_LIGHT_GREEN)
-        status_panel.SetMinSize(wx.Size(300, -1))
+        status_label10 = wx.StaticText(spray_box_sizer.GetStaticBox(), label="                    Left                                         Right", size=wx.Size(300, 30))
+        btn_sizer2 = wx.BoxSizer(wx.HORIZONTAL)
+        self.left_side_btn = ModernButton(spray_box_sizer.GetStaticBox(), label="Side Spray Machine", size=wx.Size(180, 40), bg_color=BG_COLOR_BLUE)
+        self.right_side_btn = ModernButton(spray_box_sizer.GetStaticBox(), label="Side Spray Machine", size=wx.Size(180, 40), bg_color=BG_COLOR_BLUE)
+        btn_sizer2.Add(self.left_side_btn, 0, wx.ALL, 5)
+        btn_sizer2.Add(self.right_side_btn, 0, wx.ALL, 5)
+
+        btn_sizer3 = wx.BoxSizer(wx.HORIZONTAL)
+        self.left_lift_btn = ModernButton(spray_box_sizer.GetStaticBox(), label="2D Lift Machine", size=wx.Size(180, 40), bg_color=BG_COLOR_BLUE)
+        self.right_lift_btn = ModernButton(spray_box_sizer.GetStaticBox(), label="2D Lift Machine", size=wx.Size(180, 40), bg_color=BG_COLOR_BLUE)
+        btn_sizer3.Add(self.left_lift_btn, 0, wx.ALL, 5)
+        btn_sizer3.Add(self.right_lift_btn, 0, wx.ALL, 5)
+
+        spray_box_sizer.Add(status_label10, 0, wx.EXPAND | wx.ALL, 5)
+        spray_box_sizer.Add(btn_sizer2, 0, wx.EXPAND | wx.ALL, 5)
+        spray_box_sizer.Add(btn_sizer3, 0, wx.EXPAND | wx.ALL, 5)
+
+        # Status output panel (moved to right)
+        status_panel = wx.Panel(panel)
+        status_panel.SetBackgroundColour(wx.Colour(240, 240, 240))
+        status_panel.SetMinSize(wx.Size(300, 300))
         status_sizer = wx.BoxSizer(wx.VERTICAL)
+        status_label = wx.StaticText(status_panel, label="Status Output:")
         self.status_text = wx.TextCtrl(status_panel, style=wx.TE_MULTILINE | wx.TE_READONLY)
-        status_font = wx.Font(9, wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
-        self.status_text.SetFont(status_font)
-        self.status_text.SetBackgroundColour(BG_COLOR_LIGHT_GREEN)
-        status_sizer.AddSpacer(30)
-        status_sizer.Add(self.status_text, 1, wx.EXPAND | wx.ALL, 8)
+        self.status_text.SetInsertionPointEnd()
+
+        status_sizer.Add(status_label, 0, wx.ALL, 5)
+        status_sizer.Add(self.status_text, 1, wx.EXPAND | wx.ALL, 5)
         status_panel.SetSizer(status_sizer)
 
-        right_sizer.Add(display_panel, 1, wx.EXPAND | wx.ALL, 10)
-        right_sizer.Add(status_panel, 0, wx.EXPAND | wx.TOP | wx.BOTTOM | wx.RIGHT, 10)
+        left_vbox.Add(control_box_sizer, 0, wx.EXPAND | wx.ALL, 10)
+        left_vbox.Add(param_box_sizer, 0, wx.EXPAND | wx.ALL, 10)
+        left_vbox.Add(spray_box_sizer, 0, wx.EXPAND | wx.ALL, 10)
+
+        left_scrolled.SetSizer(left_vbox)
+
+        # ================= Center: 3D View =================
+        right_panel = wx.Panel(panel)
+        right_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        center_panel = wx.Panel(right_panel)
+        center_panel.SetBackgroundColour(wx.Colour(200, 200, 200))
+        center_panel.SetMinSize(wx.Size(300, 200))
+        center_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        title_label = wx.StaticText(center_panel, label="3D Point Cloud Visualization")
+        center_sizer.Add(title_label, 0, wx.ALIGN_CENTER | wx.TOP, 10)
+
+        self.gl_canvas = PointCloudCanvas(center_panel)
+        center_sizer.Add(self.gl_canvas, 1, wx.EXPAND | wx.ALL, 5)
+        center_panel.SetSizer(center_sizer)
+
+        right_sizer.Add(center_panel, 1, wx.EXPAND | wx.ALL, 5)
         right_panel.SetSizer(right_sizer)
 
-        main_sizer.Add(left_scrolled, 0, wx.EXPAND | wx.TOP | wx.BOTTOM | wx.LEFT, 10)
-        main_sizer.Add(right_panel, 1, wx.EXPAND | wx.TOP | wx.BOTTOM | wx.RIGHT, 10)
+        # ================= Main layout =================
+        main_sizer.Add(left_scrolled, 0, wx.EXPAND | wx.ALL, 5)
+        main_sizer.Add(right_panel, 1, wx.EXPAND | wx.ALL, 5)
+        main_sizer.Add(status_panel, 0, wx.EXPAND | wx.ALL, 5)
+
         panel.SetSizer(main_sizer)
 
         scrolled_sizer = wx.BoxSizer(wx.VERTICAL)
         scrolled_sizer.Add(panel, 1, wx.EXPAND)
         scrolled_window.SetSizer(scrolled_sizer)
 
+        # 设置字体
         default_font = wx.SystemSettings.GetFont(wx.SYS_DEFAULT_GUI_FONT)
         self.SetFont(default_font)
+
+        # 设置虚拟大小
         left_scrolled.SetVirtualSize(left_vbox.GetMinSize())
 
     def _set_param_buttons_enabled(self, enabled: bool):
-        for button in self.machine_config_buttons.values():
-            button.Enable(enabled)
+        """设置参数设置按钮的启用/禁用状态"""
+        self.left_side_btn.Enable(enabled)
+        self.right_side_btn.Enable(enabled)
+        self.left_lift_btn.Enable(enabled)
+        self.right_lift_btn.Enable(enabled)
 
     def _set_control_buttons_active(self, active: bool):
+        """设置开始/结束按钮是否显示彩色外观"""
         self.start_btn.SetVisualActive(active)
         self.stop_btn.SetVisualActive(active)
+        self.save_setting_btn.SetVisualActive(active)
         self.start_btn.Enable(True)
         self.stop_btn.Enable(active)
 
     def on_program_started(self):
+        """程序启动后被调用，启用彩色按钮和参数设置按钮"""
         self._set_control_buttons_active(True)
         self._set_param_buttons_enabled(True)
 
     def on_program_stopped(self):
+        """程序停止后被调用，恢复为灰色按钮并禁用参数设置按钮"""
         self._set_control_buttons_active(False)
         self._set_param_buttons_enabled(False)
 

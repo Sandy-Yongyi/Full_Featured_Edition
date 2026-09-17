@@ -70,80 +70,80 @@ class ContinuousBidirectionalStrategy(AcquisitionStrategy):
     """
 
     def monitor_movement(self, proc):
-        """双向连续采数监测"""
-        logger.info("Waiting for movement...")
-        last_status = "stopped"
-        last_direction = None
-        pending_direction = None
-        swing = proc.read_data_config["swing_threshold"]
-
+        """以固定端点划分一趟扫描；回零时PLC发布stopped，不进入采集。"""
+        start = int(proc.read_data_config.get("min_swing_pulse", 0))
+        end = int(proc.read_data_config["max_swing_pulse"])
+        tolerance = proc.scan_position_tolerance
+        proc.continuous_scan_invalid = False
+        proc.continuous_last_saved_pulse = None
         while not proc.shutdown_flag:
+            proc._heartbeat.touch()
             pulse, _, status = proc._update_pulse_data()
-
-            if status in ("moving_forward", "moving_reverse"):
-                current_direction = "forward" if status == "moving_forward" else "reverse"
-
-                if pending_direction and current_direction != pending_direction:
-                    logger.info(f"Direction switched {pending_direction} -> {current_direction}")
-                    proc._force_finish_by_endpoint(pulse, "direction_switch")
-                    break
-
-                pending_direction = None
-
-                if current_direction == "forward":
-                    in_scan_window = pulse < (proc.read_data_config["max_swing_pulse"] - swing)
-                else:
-                    in_scan_window = pulse > (0 + swing)
-
-                if not proc.movement_detected:
-                    proc.movement_detected = True
-                    logger.info(f"{current_direction} motion start")
-                    # print(f"链条{current_direction}方向开始采集")
-
-                if in_scan_window:
-                    for state in proc.direction_states.values():
-                        if not state.scanning_started:
-                            state.scanning_started = True
-                            state.has_scanned = True
-                            state.start_pulse = pulse
-                else:
+            if getattr(proc, "continuous_wait_for_idle", False):
+                if status not in ("moving_forward", "moving_reverse"):
+                    proc.continuous_wait_for_idle = False
+                    # 确认旧扫描已停止，允许PLC空走到端点后反向重采。
+                    proc._push_lidar_status_update(reset_queue=True)
+                proc._poll_lidar_status_if_due()
+                proc._heartbeat.sleep(0.01)
+                continue
+            if proc.plc_disconnected:
+                proc.continuous_scan_invalid = True
+                break
+            if proc.movement_detected:
+                reached = pulse >= end - tolerance if proc.capture_direction == "forward" else pulse <= start + tolerance
+                if reached and status == "stopped":
+                    # PLC到端点后可能已经发布stopped，先判端点再判停止。
+                    if pulse != proc.continuous_last_saved_pulse:
+                        proc._capture_frame()
+                    if proc.finish_test:
+                        proc.continuous_scan_invalid = True
+                        break
                     for state in proc.direction_states.values():
                         state.scanning_started = False
-
-                proc.capture_direction = current_direction
-                last_direction = current_direction
-
-                # pulse 超出有效范围时，不再采数，直接结束
-                if pulse >= proc.read_data_config["max_swing_pulse"] or pulse <= 0:
-                    if current_direction == "forward":
-                        proc._force_finish_by_endpoint(pulse, "forward_end")
-                    else:
-                        proc._force_finish_by_endpoint(pulse, "reverse_end")
+                        state.stop_pulse = pulse
+                    proc.any_scanning_active = False
+                    proc.finish_test = True
                     break
-
-                proc._capture_frame()
-
-            elif status == "stopped":
-                if last_status != "stopped" and last_direction:
-                    pending_direction = last_direction
+                expected = "moving_forward" if proc.capture_direction == "forward" else "moving_reverse"
+                if status != expected:
+                    proc.continuous_scan_invalid = True
+                    logger.warning("Continuous scan interrupted before endpoint, discard current pass")
+                    break
+            elif status in ("moving_forward", "moving_reverse"):
+                proc.capture_direction = "forward" if status == "moving_forward" else "reverse"
+                proc.movement_detected = True
+                for state in proc.direction_states.values():
+                    state.scanning_started = True
+                    state.has_scanned = True
+                    state.start_pulse = pulse
+            else:
                 proc._poll_lidar_status_if_due()
-                time.sleep(0.01)
+                proc._heartbeat.sleep(0.01)
+                continue
 
-            last_status = status
-
+            if pulse != proc.continuous_last_saved_pulse:
+                proc._capture_frame()
             if proc.finish_test:
-                logger.info("Workpiece finished normally")
+                proc.continuous_scan_invalid = True
                 break
-            time.sleep(0.01)
+            proc._heartbeat.sleep(0.01)
+
+        if proc.continuous_scan_invalid or proc.shutdown_flag:
+            proc.continuous_scan_invalid = True
+            proc.continuous_wait_for_idle = True
+            # 异常中断不得将残缺点云保存或交付为完整工件。
+            proc._reset_base()
+            proc._push_lidar_status_update()
 
     def update_scanning_state(self, proc, direction: str, state, same_origin_filtered, diff_origin_filtered):
         """在此策略中由监测方法控制"""
         pass
 
     def save_valid_data(self, proc):
-        """保存有效数据 - z_value 使用原始脉冲值"""
-        current_pulse, _, _ = proc._update_pulse_data()
-        proc._save_valid_data_core(proc._get_current_scan_z_value(current_pulse))
+        """沿用脉冲转毫米，保留实际扫描位置，不减有点起点或扫描起点。"""
+        proc._save_valid_data_core(proc.current_pulse / float(proc.read_data_config["pulse_to_mm"]))
+        proc.continuous_last_saved_pulse = proc.current_pulse
 
     def check_scanning_completion(self, proc):
         """由finish_test标志控制"""
@@ -151,35 +151,32 @@ class ContinuousBidirectionalStrategy(AcquisitionStrategy):
 
     def send_raw_data(self, proc):
         """一次性发送所有数据"""
-        raw_data = {}
-        for direction in proc.lidar_config.keys():
-            if not proc.lidar_config[direction]:
-                continue
-
+        if getattr(proc, "continuous_scan_invalid", False):
+            return
+        # 直接向PLC进程发送整趟XYZ点云，不经过分区处理。
+        same_origin = int(proc.read_data_config["translate_data_origin"]) == 1
+        raw_data = {
+            "lidar_status": proc.lidar_status,
+            "translate_data_origin": int(proc.read_data_config["translate_data_origin"]),
+        }
+        directions = set(proc.lidar_config)
+        if same_origin:
+            directions.update(("left", "right"))
+            raw_data["all_data"] = proc.all_xyz_data
+            raw_data["all_stop_pulse"] = proc.current_pulse
+        for direction in sorted(directions):
             state = proc.direction_states.get(direction)
-            if not state:
-                continue
-
-            xyz_data = getattr(state, "xyz_data", None)
-            if xyz_data is None or len(xyz_data) == 0:
-                continue
-
-            data_array = np.array(xyz_data) if isinstance(xyz_data, list) else xyz_data
-            logger.info(f"Sending {len(data_array)} points for direction '{direction}'")
-            filtered_data = proc.data_filter.remove_statistical_outliers(points=data_array[:, :3], nb_neighbors=40, std_ratio=2.0)
-            z_threshold = proc.read_data_config["z_threshold"]
-            sorting_data = proc.data_split.AxisSorting_zyx(filtered_data, z_threshold)
-
-            raw_data[direction] = {"data": sorting_data}
-
-        if raw_data:
+            points = proc.all_xyz_data if same_origin else getattr(state, "xyz_data", np.empty((0, 3)))
+            raw_data[f"{direction}_data"] = points
+            stop_pulse = getattr(state, "stop_pulse", None)
+            raw_data[f"{direction}_stop_pulse"] = proc.current_pulse if stop_pulse is None else stop_pulse
+        if any(isinstance(value, np.ndarray) and value.size > 0 for key, value in raw_data.items() if key.endswith("_data")):
             proc.raw_data_queue.put(raw_data)
-            logger.info("Raw data sent to processing queue")
-            print(f"Raw data sent to processing queue [{proc.capture_direction}]")
+            logger.info("Continuous whole-workpiece raw points sent directly to PLC process")
 
     def send_direction_data(self, proc, direction_data: Dict):
-        """不需要逐帧发送，在send_raw_data中统一处理"""
-        pass
+        """点云仍按整趟交付，激光状态每次采集及时通知PLC联锁。"""
+        proc._push_lidar_status_update()
 
     def reset_for_next_workpiece(self, proc):
         """重置状态"""

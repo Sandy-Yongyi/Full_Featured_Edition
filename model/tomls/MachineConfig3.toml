@@ -1,158 +1,117 @@
+# 第三种模式：四台设备共18轴，另有201～204四个激光轴，共22轴。
+# 每台设备仅一套配置，不区分柜体和平板。
+# SN0 左侧面，SN1 左二维，SN2 右侧面，SN3 右二维。
+# U/U1/U2沿用项目已统一的X/X1/X2命名。
+# axis_type按设备组织，PLC报文的交错轴序以MachineAxisMap为准。
+# 喷涂时工件静止，由设备Z轴沿工件移动；xn_rotate负责侧面及顶底喷涂。
+# 每侧xn_rotate与z_2d_lift共用机械Z轴，Z指令仅由xn_rotate写入。
+# z_2d_lift只有独立Y/X伺服轴，随同侧xn_rotate的Z轴移动，不单独配置Z轴。
+# 两台侧面设备的数值参数保留原配置，尚未据本次轴清单重新确认。
+
+# 左边侧面喷涂机，PLC索引：Z=0,Y1=12,X1=13,R1=14,Y2=6,X2=7,R2=8。
 [0]
 sn = 0
-type = "out_fx"
-x_position = 1085
-z_position = 4750
-spray_num = 8
-axis_type = ["z", "y", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8"]
-spray_radius = 0
-x_status_offset = 100
-out_front_x_offset = 220
-out_after_x_offset = 280
-in_front_x_offset = 40
-in_after_x_offset = 80
-out_up_y_offset = 100
-out_down_y_offset = 100
-in_up_y_offset = 50
-in_down_y_offset = 50
-out_z_front_offset = 200
-out_z_after_offset = 200
-in_z_front_offset = 60
-in_z_after_offset = 60
-z_back_speed = 15
-x_pos_speed = 300
-x_recip_speed = 120
-y_pos_speed = 100
-y_recip_speed = 300
-z_zeroing_speed = 200
-outside_total_cycles = 2
-inside_total_cycles = 2
-recip_reduce_distance = 100
-install_orietation = "left"
-max_limit_speed = [250, 500, 500]
-min_limit_pos = [0, 0, 0]
-max_limit_pos = [700, 350, 900]
-origin_pos = [1170, 1420, 1670, 1920, 2170, 2420, 2670, 2920]
-safe_pos = [0, 0, 0]
-
-[1]
-sn = 1
-type = "xn_side"
+type = "xn_rotate"
 x_position = 1035
 z_position = 8570
-spray_num = 6
-axis_type = ["z", "y1", "x1", "r1", "y2", "x2", "r2", "y3", "x3", "r3", "y4", "x4", "r4", "y5", "x5", "r5", "y6", "x6", "r6"]
-spray_radius = 0
-x_status_offset = 100
-out_front_x_offset = 220
-out_after_x_offset = 280
-in_front_x_offset = 40
-in_after_x_offset = 80
-out_up_y_offset = 220
+spray_num = 2
+axis_type = ["z", "y1", "x1", "r1", "y2", "x2", "r2"]
+spray_radius = 80
+out_front_x_offset = 100
+out_after_x_offset = 100
+out_up_y_offset = 100
 out_down_y_offset = 100
-in_up_y_offset = 50
-in_down_y_offset = 50
 out_z_front_offset = 200
 out_z_after_offset = 200
-in_z_front_offset = 60
-in_z_after_offset = 60
-z_back_speed = 15
+z_back_speed = 25
 x_pos_speed = 300
-x_recip_speed = 120
-y_pos_speed = 100
-y_recip_speed = 300
-z_zeroing_speed = 200
+x_recip_speed = 100
+y_pos_speed = 300
+y_recip_speed = 100
 outside_total_cycles = 2
-inside_total_cycles = 2
-recip_reduce_distance = 100
 install_orietation = "left"
-max_limit_speed = [250, 500, 500, 160]
-min_limit_pos = [0, 0, 0, -180]
-max_limit_pos = [900, 900, 900, 180]
-origin_pos = [1120, 1420, 1720, 2020, 2320, 2620]
+max_limit_speed = [50, 500, 500, 160]
+min_limit_pos = [0, 0, 0, -135]       # 旋转轴0时顶枪朝下，底枪朝上，+90都是向前水平，负向后水平
+max_limit_pos = [3000, 1300, 1150, 135]
+origin_pos = [1600, 2900]
 safe_pos = [0, 0, 0, 0]
 
-[1.flat]
-out_front_x_offset = 150
-out_after_x_offset = 180
-in_front_x_offset = 40
-in_after_x_offset = 80
-x_pos_speed = 500
-x_recip_speed = 250
-out_up_y_offset = 220
+# 左边二维往复机，PLC索引：Y=2,X=3，PLC轴索引由MachineAxisMap按类型和安装方向获取。
+[1]
+sn = 1
+type = "z_2d_lift"
+x_position = 1035
+z_position = 8570
+spray_num = 4
+axis_type = ["y", "x"]
+spray_radius = 500
+out_front_x_offset = 100
+out_up_y_offset = 100
 out_down_y_offset = 100
-in_up_y_offset = 150
-in_down_y_offset = 150
-y_pos_speed = 100
-y_recip_speed = 300
-out_z_front_offset = 150
+out_z_front_offset = 200
 out_z_after_offset = 200
-in_z_front_offset = 150
-in_z_after_offset = 150
-z_back_speed = 15
-z_zeroing_speed = 200
-outside_total_cycles = 1
-inside_total_cycles = 1
-recip_reduce_distance = 0
-x_status_offset = 100
+z_back_speed = 25
+x_pos_speed = 300
+x_recip_speed = 100
+y_pos_speed = 300
+y_recip_speed = 100
+install_orietation = "left"
+max_limit_speed = [500, 500]
+min_limit_pos = [0, 0]
+max_limit_pos = [600, 1150]
+origin_pos = [2600]
+safe_pos = [0, 0]
 
+# 右边侧面喷涂机，PLC索引：Z=1,Y1=15,X1=16,R1=17,Y2=9,X2=10,R2=11。
 [2]
 sn = 2
-type = "xn_side"
-x_position = 1200
-z_position = 5170
-spray_num = 6
-axis_type = ["z", "y1", "x1", "r1", "y2", "x2", "r2", "y3", "x3", "r3", "y4", "x4", "r4", "y5", "x5", "r5", "y6", "x6", "r6"]
-spray_radius = 0
-x_status_offset = 100
-out_front_x_offset = 220
-out_after_x_offset = 280
-in_front_x_offset = 40
-in_after_x_offset = 80
-out_up_y_offset = 220
+type = "xn_rotate"
+x_position = 1035
+z_position = 8570
+spray_num = 2
+axis_type = ["z", "y1", "x1", "r1", "y2", "x2", "r2"]
+spray_radius = 80
+out_front_x_offset = 100
+out_after_x_offset = 100
+out_up_y_offset = 100
 out_down_y_offset = 100
-in_up_y_offset = 50
-in_down_y_offset = 50
 out_z_front_offset = 200
 out_z_after_offset = 200
-in_z_front_offset = 60
-in_z_after_offset = 60
-z_back_speed = 15
+z_back_speed = 25
 x_pos_speed = 300
-x_recip_speed = 120
-y_pos_speed = 100
-y_recip_speed = 300
-z_zeroing_speed = 200
+x_recip_speed = 100
+y_pos_speed = 300
+y_recip_speed = 100
 outside_total_cycles = 2
-inside_total_cycles = 2
-recip_reduce_distance = 100
 install_orietation = "right"
-max_limit_speed = [250, 500, 500, 160]
-min_limit_pos = [0, 0, 0, -180]
-max_limit_pos = [900, 900, 900, 180]
-origin_pos = [1120, 1420, 1720, 2020, 2320, 2620]
+max_limit_speed = [50, 500, 500, 160]
+min_limit_pos = [0, 0, 0, -135]
+max_limit_pos = [3000, 1300, 1150, 135]
+origin_pos = [1600, 2900]
 safe_pos = [0, 0, 0, 0]
 
-[2.flat]
-out_front_x_offset = 150
-out_after_x_offset = 180
-in_front_x_offset = 40
-in_after_x_offset = 80
-x_pos_speed = 500
-x_recip_speed = 250
-out_up_y_offset = 220
+# 右边二维往复机，PLC索引：Y=4,X=5，PLC轴索引由MachineAxisMap按类型和安装方向获取。
+[3]
+sn = 3
+type = "z_2d_lift"
+x_position = 1035
+z_position = 8570
+spray_num = 4
+axis_type = ["y", "x"]
+spray_radius = 500
+out_front_x_offset = 100
+out_up_y_offset = 100
 out_down_y_offset = 100
-in_up_y_offset = 150
-in_down_y_offset = 150
-y_pos_speed = 100
-y_recip_speed = 300
-out_z_front_offset = 150
+out_z_front_offset = 200
 out_z_after_offset = 200
-in_z_front_offset = 150
-in_z_after_offset = 150
-z_back_speed = 15
-z_zeroing_speed = 200
-outside_total_cycles = 1
-inside_total_cycles = 1
-recip_reduce_distance = 0
-x_status_offset = 100
+z_back_speed = 25
+x_pos_speed = 300
+x_recip_speed = 100
+y_pos_speed = 300
+y_recip_speed = 100
+install_orietation = "right"
+max_limit_speed = [500, 500]
+min_limit_pos = [0, 0]
+max_limit_pos = [600, 1150]
+origin_pos = [2600]
+safe_pos = [0, 0]

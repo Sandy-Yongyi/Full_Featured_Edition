@@ -15,6 +15,7 @@ class MotionXNSidePlanning:
         self.process_cfg = TomlLoader.load(os.getcwd() + "\\model\\tomls\\ProcessConfig.toml")
         self.spray_pos_tolerance = int(self.spray_cfg.get("spray_pos_tolerance", 10) or 10)
         self.rect_threshold = int(self.spray_cfg.get("rect_threshold", 100) or 100)
+        self.flat_handoff_distance = max(0, int(self.spray_cfg.get("xn_side_flat_handoff_distance", 500)))
         self.side_back_end_face_enabled = self._normalize_enabled_flag(self.spray_cfg.get("side_back_end_face_enabled", 1))
         self.side_rotate_enabled = self._normalize_enabled_flag(self.spray_cfg.get("side_rotate_enabled", 1))
         self.x_range = int(self.process_cfg.get("x_range", 300) or 300)
@@ -64,26 +65,42 @@ class MotionXNSidePlanning:
         spray_mode = self._resolve_spray_mode(block)
         mode_runtime_cfg = self._resolve_mode_runtime_cfg(runtime_cfg, spray_mode)
         self._ensure_mode_state(sn, spray_mode)
-
-        if spray_mode == "cabinet" and self._work_states[sn]["state"] == "wait_front_outside":
-            axis_data, _, drop = self.motion_util.precheck_z_safety_and_drop_blocks(
-                machine_cfg=machine_cfg,
-                runtime_cfg=mode_runtime_cfg,
-                plc_data=plc_data,
-                block=block,
-                reset_state_cb=lambda: self.reset_side_motion_state(sn),
-            )
-            if drop:
-                return axis_data, True, stop_chain
+        self._ensure_mode_z_target(sn, machine_cfg, mode_runtime_cfg, spray_mode)
 
         ctx = self._build_context(machine_cfg, mode_runtime_cfg, plc_data, block, spray_mode)
+        if self._work_states[sn]["state"] == "wait_missed_cabinet_clear":
+            axis_cmds, done = self._wait_missed_cabinet_clear(ctx, runtime_cfg, frame_queue)
+            return axis_cmds, done, stop_chain
+
+        if spray_mode == "flat" and self._work_states[sn]["state"] == "recip_outside":
+            if self._has_after_outside_arrived(ctx) or self._has_after_outside_over_arrived(ctx):
+                handoff_axes = self._try_flat_handoff(ctx, frame_queue)
+                if handoff_axes is not None:
+                    return handoff_axes, True, stop_chain
+        if self._work_states[sn]["state"] == "wait_front_outside" and not self._has_mode_z_target_arrived(ctx):
+            ctx["side_machine"], _ = self._build_safe_axes_for_z_target(ctx, self._get_mode_z_target(ctx))
+            return ctx["side_machine"], False, stop_chain
+
+        if spray_mode == "cabinet" and self._work_states[sn]["state"] == "wait_front_outside":
+            if self._has_cabinet_reached_safety_zone(ctx):
+                self._work_states[sn]["state"] = "wait_missed_cabinet_clear"
+                logger.warning(f"sn:[{sn}] side cabinet missed front, wait until rear clears before removal")
+                axis_cmds, done = self._wait_missed_cabinet_clear(ctx, runtime_cfg, frame_queue)
+                return axis_cmds, done, stop_chain
+
         done = self._handle_side_spray(ctx)
         axis_cmds = ctx.get("side_machine") or self.motiontotarget.hold_current_position(machine_cfg, plc_data)
         return axis_cmds, done, stop_chain
 
     @staticmethod
     def _create_initial_state():
-        return {"state": "wait_front_outside", "inside_idx": 0, "spray_mode": None, "skip_inside_recip": False}
+        return {
+            "state": "wait_front_outside",
+            "inside_idx": 0,
+            "spray_mode": None,
+            "skip_inside_recip": False,
+            "mode_z_target": None,
+        }
 
     def _build_context(self, machine_cfg, runtime_cfg, plc_data, block, spray_mode):
         ctx = WorkpieceMotionHelper.build_block_context(machine_cfg, runtime_cfg, plc_data, block)
@@ -116,6 +133,11 @@ class MotionXNSidePlanning:
             self._work_states[sn] = self._create_initial_state()
             state = self._work_states[sn]
         state["spray_mode"] = spray_mode
+
+    def _ensure_mode_z_target(self, sn, machine_cfg, runtime_cfg, spray_mode):
+        state = self._work_states[sn]
+        if state.get("mode_z_target") is None:
+            state["mode_z_target"] = self._resolve_mode_z_target(machine_cfg, runtime_cfg, spray_mode)
 
     def _handle_side_spray(self, ctx):
         sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
@@ -178,10 +200,88 @@ class MotionXNSidePlanning:
     def _dispatch_table_flat_side(self):
         return {
             "wait_front_outside": self._state_wait_front_outside,
+            "wait_flat_handoff": self._state_wait_flat_handoff,
+            "wait_flat_pass": self._state_wait_flat_pass,
             "recip_outside": self._state_recip_outside,
             "return_origin": self._state_return_origin,
             "finish": self._state_finish,
         }
+
+    def _wait_missed_cabinet_clear(self, ctx, runtime_cfg, frame_queue):
+        sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
+        next_mode = self._resolve_next_spray_mode(frame_queue)
+        next_runtime_cfg = self._resolve_mode_runtime_cfg(runtime_cfg, next_mode)
+        z_target = self._resolve_mode_z_target(ctx["machine_cfg"], next_runtime_cfg, next_mode)
+        target_ctx = {**ctx, "runtime_cfg": next_runtime_cfg}
+        axis_cmds, safe_ready = self._build_safe_axes_for_z_target(target_ctx, z_target)
+
+        if safe_ready and self._has_skipped_cabinet_rear_cleared(ctx):
+            logger.info(
+                f"sn:[{sn}] side skipped cabinet rear cleared at z_target={z_target}, "
+                f"next_mode={next_mode}, remove block"
+            )
+            self.reset_side_motion_state(sn)
+            return axis_cmds, True
+        return axis_cmds, False
+
+    def _resolve_next_spray_mode(self, frame_queue):
+        if len(frame_queue) < 2:
+            return "cabinet"
+        next_block = WorkpieceMotionHelper.peek_first_block([frame_queue[1]])
+        if next_block is None or getattr(next_block, "is_empty", False) or not next_block.outside_data:
+            return "cabinet"
+        return self._resolve_spray_mode(next_block)
+
+    def _try_flat_handoff(self, ctx, frame_queue):
+        if self.flat_handoff_distance <= 0 or len(frame_queue) < 2:
+            return None
+        block = WorkpieceMotionHelper.peek_first_block([frame_queue[1]])
+        if block is None or getattr(block, "is_empty", False) or not block.outside_data or self._resolve_spray_mode(block) != "flat":
+            return None
+        machine_cfg, runtime_cfg = ctx["machine_cfg"], ctx["runtime_cfg"]
+        z_target = self._resolve_mode_z_target(machine_cfg, runtime_cfg, "flat")
+        if z_target != self._get_mode_z_target(ctx) or not self._has_mode_z_target_arrived(ctx):
+            return None
+        next_ctx = self._build_context(machine_cfg, runtime_cfg, ctx["plc_data"], block, "flat")
+        if self._has_after_outside_arrived(next_ctx) or self._has_after_outside_over_arrived(next_ctx):
+            return None
+        machine_z, chain_z = WorkpieceMotionHelper.get_outside_front_z_pair(next_ctx, "out_z_front_offset", "outside_z_min")
+        distance = self._get_compare_machine_z(next_ctx, machine_z) - chain_z
+        if distance > self.flat_handoff_distance:
+            return None
+        sn = int(machine_cfg.get("sn", 0) or 0)
+        self.reset_side_motion_state(sn)
+        self._work_states[sn] = self._create_initial_state()
+        self._work_states[sn].update(
+            state="wait_flat_handoff",
+            spray_mode="flat",
+            mode_z_target=z_target,
+            flat_handoff=True,
+        )
+        # The coordinator removes only the old queue head; keep the new commands and state.
+        next_state = self._state_wait_flat_handoff(next_ctx)
+        if next_state:
+            self._work_states[sn]["state"] = next_state
+        logger.info(f"sn:[{sn}] side flat handoff, next front distance={distance}, z_target={z_target}")
+        return next_ctx["side_machine"]
+
+    def _state_wait_flat_handoff(self, ctx):
+        if self._has_after_outside_arrived(ctx) or self._has_after_outside_over_arrived(ctx):
+            ctx["side_machine"], _ = self._move_to_mode_safe(ctx)
+            return "return_origin"
+        if self._has_front_outside_arrived(ctx) or self._has_front_outside_over_arrived(ctx):
+            self._state_recip_outside(ctx)
+            return "recip_outside"
+        group = self._get_outside_group(ctx)
+        axes = self._build_position_axes(ctx, group, 180)
+        x_min, _ = self._get_outside_x_range(ctx)
+        gun_axes = self._build_gun_axes(
+            ctx["machine_cfg"], ctx["plc_data"], self._get_enabled_guns_by_id(group), x_min, 0, False,
+            x_speed=int(ctx["runtime_cfg"].get("x_pos_speed", ctx["machine_cfg"].get("x_pos_speed", 100)) or 100),
+        )
+        axes.update({name: axis for name, axis in gun_axes.items() if name.startswith("x")})
+        ctx["side_machine"] = axes
+        return None
 
     def _state_wait_front_outside(self, ctx):
         spray_mode = ctx.get("spray_mode")
@@ -195,14 +295,30 @@ class MotionXNSidePlanning:
         if self._has_front_outside_over_arrived(ctx):
             logger.info(f"sn:[{sn}] side over arrive front outside")
             if spray_mode == "flat":
+                if self._has_after_outside_arrived(ctx) or self._has_after_outside_over_arrived(ctx):
+                    return "wait_flat_pass"
+                logger.info(f"sn:[{sn}] side flat front already passed, continue outside spraying")
                 return "recip_outside"
             if self._switch_to_next_enterable_inside(ctx, 0):
                 return "wait_front_inside"
             return "wait_after_outside"
         return None
 
+    def _state_wait_flat_pass(self, ctx):
+        sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
+        axis_cmds, mode_safe_ready = self._move_to_mode_safe(ctx)
+        ctx["side_machine"] = axis_cmds
+        if mode_safe_ready and self._has_after_outside_over_arrived(ctx):
+            logger.info(f"sn:[{sn}] side flat missed front and shifted rear passed, finish without spraying")
+            return "finish"
+        return None
+
     def _state_recip_outside(self, ctx):
         sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
+        if self._has_after_outside_arrived(ctx) or self._has_after_outside_over_arrived(ctx):
+            ctx["side_machine"], _ = self._move_to_mode_safe(ctx)
+            logger.info(f"sn:[{sn}] side flat outside reached after outside, return origin")
+            return "return_origin"
         group = self._get_outside_group(ctx)
         x_min, x_max = self._get_outside_x_range(ctx)
         enabled_guns = list(self._get_enabled_guns_by_id(group).values())
@@ -222,14 +338,20 @@ class MotionXNSidePlanning:
             y_max=y_upper,
             r_angle=self._resolve_side_r_angle(180),
             state_key=self._state_prefix(sn, "flat_outside"),
-            z_target=self._get_safe_z_target(ctx["machine_cfg"]),
-            z_speed=self._get_back_z_speed(ctx),
+            z_target=self._get_mode_z_target(ctx),
+            z_speed=self._get_safe_z_speed(ctx),
             x_active_status=3,
         )
+        if self._work_states[sn].get("flat_handoff"):
+            enabled_by_id = self._get_enabled_guns_by_id(group)
+            if self.recip_manager._is_independent_y_mode(ctx["machine_cfg"]):
+                gun_ranges = self.recip_manager._get_independent_y_ranges(ctx["machine_cfg"], group, ctx["runtime_cfg"])
+                enabled_by_id = self.recip_manager._get_enabled_guns_by_id(gun_ranges)
+            for gun_idx in range(int(ctx["machine_cfg"].get("spray_num", 0) or 0)):
+                axis = axis_cmds.get(f"x{gun_idx + 1}")
+                if axis is not None:
+                    axis.Status = 3 if gun_idx in enabled_by_id and self._is_chain_running(ctx["plc_data"]) else 0
         ctx["side_machine"] = axis_cmds
-        if self._has_after_outside_arrived(ctx) or self._has_after_outside_over_arrived(ctx):
-            logger.info(f"sn:[{sn}] side flat outside reached after outside, return origin")
-            return "return_origin"
         return None
 
     def _state_recip_front_outside(self, ctx):
@@ -487,11 +609,14 @@ class MotionXNSidePlanning:
         return None
 
     def _state_return_origin(self, ctx):
-        axis_cmds, done = self.motiontotarget.move_to_origin_safe(
-            machine_cfg=ctx["machine_cfg"],
-            runtime_cfg=ctx["runtime_cfg"],
-            plc_data=ctx["plc_data"],
-        )
+        if ctx.get("spray_mode") == "flat":
+            axis_cmds, done = self._move_to_mode_safe(ctx)
+        else:
+            axis_cmds, done = self.motiontotarget.move_to_origin_safe(
+                machine_cfg=ctx["machine_cfg"],
+                runtime_cfg=ctx["runtime_cfg"],
+                plc_data=ctx["plc_data"],
+            )
         if axis_cmds is None:
             axis_cmds = self.motiontotarget.hold_current_position(ctx["machine_cfg"], ctx["plc_data"])
         ctx["side_machine"] = axis_cmds
@@ -513,7 +638,8 @@ class MotionXNSidePlanning:
         plc_data = ctx["plc_data"]
         runtime_cfg = ctx["runtime_cfg"]
         axis_cmds = self.motiontotarget.hold_current_position(machine_cfg, plc_data)
-        axis_cmds["z"] = self._build_z_axis(machine_cfg, self._get_safe_z_target(machine_cfg), self._get_back_z_speed(ctx))
+        z_speed = self._get_safe_z_speed(ctx) if ctx.get("spray_mode") == "flat" else self._get_back_z_speed(ctx)
+        axis_cmds["z"] = self._build_z_axis(machine_cfg, self._get_mode_z_target(ctx), z_speed)
 
         enabled_by_id = self._get_enabled_guns_by_id(gun_group)
         status_enabled_by_id = self._get_enabled_guns_by_id(gun_group) if x_status else None
@@ -540,6 +666,45 @@ class MotionXNSidePlanning:
             )
         )
         return axis_cmds
+
+    def _build_safe_axes_for_z_target(self, ctx, z_target):
+        machine_cfg = ctx["machine_cfg"]
+        runtime_cfg = ctx["runtime_cfg"]
+        plc_data = ctx["plc_data"]
+        axis_cmds = self.motiontotarget.hold_current_position(machine_cfg, plc_data)
+        axis_cmds["z"] = self._build_z_axis(machine_cfg, z_target, self._get_safe_z_speed(ctx))
+
+        x_speed = int(runtime_cfg.get("x_pos_speed", machine_cfg.get("x_pos_speed", 100)) or 100)
+        y_speed = int(runtime_cfg.get("y_pos_speed", machine_cfg.get("y_pos_speed", 100)) or 100)
+        axis_cmds.update(
+            self._build_gun_axes(
+                machine_cfg,
+                plc_data,
+                {gun_idx: True for gun_idx in range(int(machine_cfg.get("spray_num", 0) or 0))},
+                self._get_x_safe(machine_cfg),
+                0,
+                hold_current=False,
+                x_speed=x_speed,
+                r_target=self._get_r_safe(machine_cfg),
+                apply_r_to_all=True,
+            )
+        )
+        for axis_name in machine_cfg.get("axis_type", []):
+            if axis_name.startswith("y"):
+                axis_cmds[axis_name] = self._build_y_axis(
+                    machine_cfg,
+                    get_axis_safe_pos(machine_cfg, axis_name, default=0),
+                    y_speed,
+                )
+
+        ready = abs(self._get_axis_pos(machine_cfg, plc_data, "z") - int(z_target or 0)) <= self.spray_pos_tolerance
+        for axis_name in machine_cfg.get("axis_type", []):
+            if axis_name == "z":
+                continue
+            safe_target = get_axis_safe_pos(machine_cfg, axis_name, default=0)
+            if abs(self._get_axis_pos(machine_cfg, plc_data, axis_name) - safe_target) > self.spray_pos_tolerance:
+                ready = False
+        return axis_cmds, ready
 
     def _prepare_next_stage(self, ctx, gun_group, r_angle):
         machine_cfg = ctx["machine_cfg"]
@@ -837,6 +1002,32 @@ class MotionXNSidePlanning:
         machine_z, chain_z = WorkpieceMotionHelper.get_outside_front_z_pair(ctx, "out_z_front_offset", "outside_z_min")
         return self.motion_util.has_arrived_z(self._get_compare_machine_z(ctx, machine_z), chain_z)
 
+    def _has_cabinet_reached_safety_zone(self, ctx):
+        machine_z, chain_z = WorkpieceMotionHelper.get_outside_front_z_pair(
+            ctx, "out_z_front_offset", "outside_z_min"
+        )
+        start_z_machine = self._get_compare_machine_z(ctx, machine_z)
+        return chain_z >= start_z_machine
+
+    def _has_skipped_cabinet_rear_cleared(self, ctx):
+        outside = (ctx.get("outside_data") or [None])[0]
+        if outside is None:
+            return True
+        machine_cfg = ctx["machine_cfg"]
+        runtime_cfg = ctx["runtime_cfg"]
+        rear_z_chain = int(ctx["fifo_frame_pos"] or 0) - int(getattr(outside, "outside_z_max", 0) or 0)
+        current_z = self._get_axis_pos(machine_cfg, ctx["plc_data"], "z")
+        after_offset = int(runtime_cfg.get("out_z_after_offset", machine_cfg.get("out_z_after_offset", 0)) or 0)
+        spray_radius = int(machine_cfg.get("spray_radius", 0) or 0)
+        clear_z_machine = (
+            int(machine_cfg.get("z_position", 0) or 0)
+            + current_z
+            + after_offset
+            + spray_radius
+            + self.spray_pos_tolerance
+        )
+        return rear_z_chain > clear_z_machine
+
     def _has_front_outside_x_status_arrived(self, ctx):
         machine_z, chain_z = WorkpieceMotionHelper.get_outside_front_z_pair(ctx, "out_z_front_offset", "outside_z_min")
         machine_z -= self._get_x_status_offset(ctx)
@@ -897,6 +1088,33 @@ class MotionXNSidePlanning:
     def _get_work_z_target(self, machine_cfg):
         _, z_max_limit = get_axis_position_limits(machine_cfg, "z")
         return z_max_limit
+
+    def _resolve_mode_z_target(self, machine_cfg, runtime_cfg, spray_mode):
+        if spray_mode != "flat":
+            return self._get_safe_z_target(machine_cfg)
+
+        flat_cfg = machine_cfg.get("flat") if isinstance(machine_cfg.get("flat"), dict) else {}
+        raw_target = runtime_cfg.get("z_spray_position", flat_cfg.get("z_spray_position", 500))
+        if raw_target is None:
+            raw_target = 500
+        z_min_limit, z_max_limit = get_axis_position_limits(machine_cfg, "z")
+        z_spray_max = max(z_min_limit, z_max_limit - self.spray_pos_tolerance - 1)
+        return clamp_to_limit_z(int(raw_target), z_min_limit, z_spray_max)
+
+    def _get_mode_z_target(self, ctx):
+        sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
+        state = self._work_states.get(sn, {})
+        target = state.get("mode_z_target")
+        if target is not None:
+            return int(target)
+        return self._resolve_mode_z_target(ctx["machine_cfg"], ctx["runtime_cfg"], ctx.get("spray_mode"))
+
+    def _has_mode_z_target_arrived(self, ctx):
+        current_z = self._get_axis_pos(ctx["machine_cfg"], ctx["plc_data"], "z")
+        return abs(current_z - self._get_mode_z_target(ctx)) <= self.spray_pos_tolerance
+
+    def _move_to_mode_safe(self, ctx):
+        return self._build_safe_axes_for_z_target(ctx, self._get_mode_z_target(ctx))
 
     def _get_safe_z_target(self, machine_cfg):
         return get_axis_safe_pos(machine_cfg, "z", default=0)

@@ -3,6 +3,35 @@ from control.MachineConfigFrameControl import load_machine_config_for_ui, save_m
 
 
 class MachineConfigFrame(wx.Dialog):
+    CONTINUOUS_PARAM_KEYS = {
+        "xn_rotate": [
+            "out_front_x_offset", "out_after_x_offset", "out_up_y_offset", "out_down_y_offset",
+            "out_z_front_offset", "out_z_after_offset", "z_back_speed", "x_pos_speed", "x_recip_speed",
+            "y_pos_speed", "y_recip_speed", "outside_total_cycles",
+        ],
+        "z_2d_lift": [
+            "out_front_x_offset", "out_up_y_offset", "out_down_y_offset", "out_z_front_offset",
+            "out_z_after_offset", "x_pos_speed", "x_recip_speed", "y_pos_speed", "y_recip_speed",
+        ],
+    }
+    CONTINUOUS_LABELS = {
+        "out_front_x_offset": "Front X offset (mm)",
+        "out_after_x_offset": "Rear X offset (mm)",
+        "out_up_y_offset": "Upper Y offset (mm)",
+        "out_down_y_offset": "Lower Y offset (mm)",
+        "out_z_front_offset": "Front Z offset (mm)",
+        "out_z_after_offset": "Rear Z offset (mm)",
+        "z_back_speed": "Z return spray speed (mm/s)",
+        "x_pos_speed": "X positioning speed (mm/s)",
+        "x_recip_speed": "X reciprocating speed (mm/s)",
+        "y_pos_speed": "Y positioning speed (mm/s)",
+        "y_recip_speed": "Y reciprocating speed (mm/s)",
+        "outside_total_cycles": "Spray cycles",
+    }
+
+    def _text(self, chinese, english):
+        return english if self.strategy_name == "continuous_bidirectional" else chinese
+
     PARAM_LABELS = {
         "tracking": "是否跟踪(0否/1是)",
         "y_move_min": "Y轴往复最小位置(mm)",
@@ -29,6 +58,7 @@ class MachineConfigFrame(wx.Dialog):
         "in_z_after_offset": "内侧Z轴后定位偏移(mm)",
         "z_back_speed": "Z轴反喷速度(mm/s)",
         "z_zeroing_speed": "Z轴归零速度(mm/s)",
+        "z_spray_position": "平板Z轴喷涂位置(mm)",
         "outside_total_cycles": "外侧往复喷涂次数",
         "inside_total_cycles": "内侧往复喷涂次数",
         "recip_reduce_distance": "往复减少距离(mm)",
@@ -92,6 +122,8 @@ class MachineConfigFrame(wx.Dialog):
     }
 
     def __init__(self, parent, sn: int, control_queue=None, strategy_name="frame_by_frame", title_prefix="设备参数设置"):
+        if strategy_name == "continuous_bidirectional":
+            title_prefix = "Device Settings"
         super().__init__(parent, title=f"{title_prefix} - SN[{sn}]", style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
         self.sn = sn
         self.control_queue = control_queue
@@ -100,13 +132,18 @@ class MachineConfigFrame(wx.Dialog):
         self.flat_ctrls = {}
         self.machine_cfg = load_machine_config_for_ui(self.sn, self.strategy_name)
         self.PARAM_ORDER = self._get_param_order_for_config(sn, self.machine_cfg)
+        self.FLAT_PARAM_ORDER = list(self.PARAM_ORDER)
+        if self.machine_cfg.get("type") == "xn_side":
+            self.FLAT_PARAM_ORDER.append(("z_spray_position", self.PARAM_LABELS["z_spray_position"]))
         self._build_ui()
         self._load_values()
         if self.control_queue is None:
-            wx.MessageBox("警告：控制队列无效，修改的参数可能无法实时生效", "警告", wx.OK | wx.ICON_WARNING)
+            wx.MessageBox(self._text("警告：控制队列无效，修改的参数可能无法实时生效", "Control queue unavailable. Changes may require a restart."), self._text("警告", "Warning"), wx.OK | wx.ICON_WARNING)
 
     def _get_param_order_for_config(self, sn: int, machine_cfg: dict):
         """根据SN号返回需要显示的参数列表"""
+        if self.strategy_name == "continuous_bidirectional":
+            return [(key, self.CONTINUOUS_LABELS[key]) for key in self.CONTINUOUS_PARAM_KEYS.get(machine_cfg.get("type"), [])]
         if self.strategy_name == "frame_by_frame":
             machine_type = machine_cfg.get("type")
             if machine_type == "xn_updown4":
@@ -127,23 +164,23 @@ class MachineConfigFrame(wx.Dialog):
         machine_type = self.machine_cfg.get("type")
         return self.strategy_name == "complete_workpiece" and machine_type == "xn_side"
 
-    def _build_param_grid(self, parent, ctrls: dict):
+    def _build_param_grid(self, parent, ctrls: dict, param_order=None):
         grid = wx.FlexGridSizer(rows=0, cols=2, hgap=8, vgap=8)
         grid.AddGrowableCol(1, 1)
 
-        for key, label in self.PARAM_ORDER:
+        for key, label in param_order or self.PARAM_ORDER:
             grid.Add(wx.StaticText(parent, label=label), 0, wx.ALIGN_CENTER_VERTICAL)
             ctrl = wx.TextCtrl(parent)
             ctrls[key] = ctrl
             grid.Add(ctrl, 1, wx.EXPAND)
         return grid
 
-    def _build_param_scroller(self, parent, ctrls: dict):
+    def _build_param_scroller(self, parent, ctrls: dict, param_order=None):
         scroller = wx.ScrolledWindow(parent, style=wx.VSCROLL | wx.HSCROLL)
         scroller.SetScrollRate(12, 12)
 
         scroller_sizer = wx.BoxSizer(wx.VERTICAL)
-        scroller_sizer.Add(self._build_param_grid(scroller, ctrls), 0, wx.ALL | wx.EXPAND, 15)
+        scroller_sizer.Add(self._build_param_grid(scroller, ctrls, param_order), 0, wx.ALL | wx.EXPAND, 15)
         scroller.SetSizer(scroller_sizer)
         scroller.FitInside()
 
@@ -170,7 +207,7 @@ class MachineConfigFrame(wx.Dialog):
 
             flat_panel = wx.Panel(notebook)
             flat_sizer = wx.BoxSizer(wx.VERTICAL)
-            flat_sizer.Add(self._build_param_scroller(flat_panel, self.flat_ctrls), 1, wx.EXPAND)
+            flat_sizer.Add(self._build_param_scroller(flat_panel, self.flat_ctrls, self.FLAT_PARAM_ORDER), 1, wx.EXPAND)
             flat_panel.SetSizer(flat_sizer)
             notebook.AddPage(flat_panel, "平板配置")
 
@@ -179,8 +216,8 @@ class MachineConfigFrame(wx.Dialog):
             main_sizer.Add(self._build_param_scroller(self, self.ctrls), 1, wx.ALL | wx.EXPAND, 10)
 
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        save_btn = wx.Button(self, label="保存参数修改")
-        cancel_btn = wx.Button(self, label="取消")
+        save_btn = wx.Button(self, label=self._text("保存参数修改", "Save Settings"))
+        cancel_btn = wx.Button(self, label=self._text("取消", "Cancel"))
 
         save_btn.Bind(wx.EVT_BUTTON, self.on_save)
         cancel_btn.Bind(wx.EVT_BUTTON, lambda e: self.EndModal(wx.ID_CANCEL))
@@ -218,7 +255,10 @@ class MachineConfigFrame(wx.Dialog):
     def _collect_values(self, ctrls: dict):
         values = {}
         for key, ctrl in ctrls.items():
-            values[key] = int(ctrl.GetValue())
+            try:
+                values[key] = int(ctrl.GetValue())
+            except ValueError:
+                raise ValueError(self._text(f"{key} 必须填写整数", f"{self.CONTINUOUS_LABELS.get(key, key)}: enter an integer.")) from None
         return values
 
     def on_save(self, event):
@@ -228,7 +268,7 @@ class MachineConfigFrame(wx.Dialog):
                 values["flat"] = self._collect_values(self.flat_ctrls)
 
             save_machine_config_from_ui(self.sn, values, self.control_queue, strategy_name=self.strategy_name)
-            wx.MessageBox("参数已保存并生效", "成功", wx.OK | wx.ICON_INFORMATION)
+            wx.MessageBox(self._text("参数已保存并生效", "Settings saved."), self._text("成功", "Success"), wx.OK | wx.ICON_INFORMATION)
             self.EndModal(wx.ID_OK)
         except Exception as e:
-            wx.MessageBox(str(e), "参数错误", wx.OK | wx.ICON_ERROR)
+            wx.MessageBox(str(e), self._text("参数错误", "Invalid Settings"), wx.OK | wx.ICON_ERROR)

@@ -33,6 +33,22 @@ class MotionCleaningPlanning:
                     return True
         return False
 
+    def has_any_continuous_workpiece(self, frame_queue_manager) -> bool:
+        """第三模式任一方向的三个工位中存在原始点云，即表示仍有工件。"""
+        for station_slots in (getattr(frame_queue_manager, "frame_stack", {}) or {}).values():
+            if any(item is not None for item in (station_slots or [])):
+                return True
+        return False
+
+    def resolve_continuous_mode_state(self, operate: int, last_operate: int, frame_queue_manager, force_disable_all: bool):
+        """统一计算第三模式的清理开关、队列就绪状态和关闭沿。"""
+        clean_mode_enabled = not force_disable_all and self.is_clean_mode_enabled(operate)
+        clean_mode_ready = clean_mode_enabled and not self.has_any_continuous_workpiece(frame_queue_manager)
+        clean_mode_just_closed = self.is_clean_mode_enabled(last_operate) and not clean_mode_enabled
+        if clean_mode_enabled and not clean_mode_ready:
+            self.log_clean_mode_blocked("Workpiece data remains in station slots; disable cleaning mode.")
+        return clean_mode_enabled, clean_mode_ready, clean_mode_just_closed
+
     def build_device_axis_cmds(self, machine_cfg, runtime_cfg, clean_ready: bool):
         axis_cmds = {}
         axis_type_list = machine_cfg.get("axis_type", []) or []

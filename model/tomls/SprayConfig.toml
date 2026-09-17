@@ -151,6 +151,9 @@ origin_pos_max = 4000
 inside_total_cycles_min = 1
 inside_total_cycles_max = 5
 
+# 相邻平板直接衔接的起喷剩余距离mm，0关闭；修改后重启软件
+xn_side_flat_handoff_distance = 500
+
 # 往复减少距离的界面输入范围，单位 mm
 recip_reduce_distance_min = 0
 recip_reduce_distance_max = 300

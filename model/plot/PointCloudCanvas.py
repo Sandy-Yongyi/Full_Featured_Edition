@@ -28,6 +28,7 @@ class PointCloudCanvas(glcanvas.GLCanvas):
     4) 方框线框仍然用原本的立即模式绘制，以确保外观/顺序一致
     """
     def __init__(self, parent):
+        self.english = False
         attribs = [
             glcanvas.WX_GL_RGBA,
             glcanvas.WX_GL_DOUBLEBUFFER,
@@ -95,7 +96,7 @@ class PointCloudCanvas(glcanvas.GLCanvas):
             glPointSize(2)  # 点大小不变
             self.init = True
         except Exception as e:
-            print(f"OpenGL初始化失败: {str(e)}")
+            print((f"OpenGL initialization failed: {e}" if self.english else f"OpenGL初始化失败: {str(e)}"))
             raise
 
     def _ensure_vbos(self):
@@ -108,7 +109,7 @@ class PointCloudCanvas(glcanvas.GLCanvas):
             if self._vbo_id_col is None:
                 self._vbo_id_col = glGenBuffers(1)
         except Exception as e:
-            print(f"创建 VBO 失败，自动降级到客户端数组: {e}")
+            print((f"VBO creation failed; using client arrays: {e}" if self.english else f"创建 VBO 失败，自动降级到客户端数组: {e}"))
             self._vbo_enabled = False
             self._dispose_vbos()
 
@@ -187,7 +188,7 @@ class PointCloudCanvas(glcanvas.GLCanvas):
         self._vbo_needs_upload = True
         self._request_refresh()
 
-        print(f"接收到点数量: {len(self.points)}")
+        print((f"Received points: {len(self.points)}" if self.english else f"接收到点数量: {len(self.points)}"))
 
     def set_boxes(self, boxes_data):
         """设置方框线框数据，支持 BlockData 对象或字典格式"""
@@ -578,7 +579,7 @@ class PointCloudCanvas(glcanvas.GLCanvas):
                 glBindBuffer(GL_ARRAY_BUFFER, 0)
                 self._vbo_needs_upload = False
             except Exception as e:
-                print(f"VBO 上传失败，降级到客户端数组: {e}")
+                print((f"VBO upload failed; using client arrays: {e}" if self.english else f"VBO 上传失败，降级到客户端数组: {e}"))
                 self._vbo_enabled = False
                 self._dispose_vbos()
 
@@ -611,8 +612,8 @@ class PointCloudCanvas(glcanvas.GLCanvas):
         if picked_point is not None:
             self.orbit_center = np.array(picked_point, dtype=np.float32)
             print(
-                f"旋转中心已设置为: X={picked_point[0]:.2f}, "
-                f"Y={picked_point[1]:.2f}, Z={picked_point[2]:.2f}"
+                ("Orbit center set to: " if self.english else "旋转中心已设置为: ")
+                + f"X={picked_point[0]:.2f}, Y={picked_point[1]:.2f}, Z={picked_point[2]:.2f}"
             )
             self._request_refresh()
         event.Skip()

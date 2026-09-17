@@ -9,7 +9,7 @@ from control.DataProcessWorker import DataProcessWorker
 from view.MainFrame import MainFrame
 from model.utils.TomlLoader import TomlLoader
 from model.utils.LidarDirectionUtil import get_active_directions, get_active_lidar_config
-from model.utils.StrategyUtil import is_complete_workpiece_mode, strategy_name_from_code
+from model.utils.StrategyUtil import is_complete_workpiece_mode, is_continuous_bidirectional_mode, strategy_name_from_code
 from model.plot.Draw import PointCloudVisualizer
 from model.dataprocess.DataFilter import DataFilter
 from view.MachineConfigFrame import MachineConfigFrame
@@ -44,6 +44,9 @@ class SubprocessRedirect:
 
 
 class MainFrameController(MainFrame):
+    def _text(self, chinese, english):
+        return english if is_continuous_bidirectional_mode(self.strategy_name) else chinese
+
     def __init__(self, parent):
         super().__init__(parent)
 
@@ -67,6 +70,10 @@ class MainFrameController(MainFrame):
         self.spray_config = TomlLoader.load(f"{self.toml_path}\\SprayConfig.toml")
         self.mode_config = TomlLoader.load(self.mode_config_path)
         self.strategy_name = strategy_name_from_code(self.mode_config.get("strategy_name"))
+        self.gl_canvas.english = is_continuous_bidirectional_mode(self.strategy_name)
+        self.chain_speed_text.SetValue(str(self.read_data_config.get("lidar_scan_speed", 25)))
+        self.chain_speed_text.Enable(is_continuous_bidirectional_mode(self.strategy_name))
+        self.save_setting_btn.Enable(is_continuous_bidirectional_mode(self.strategy_name))
         self._ensure_password_config()
 
         # 重定向标准输出
@@ -76,9 +83,30 @@ class MainFrameController(MainFrame):
         # 绑定按钮事件
         self.start_btn.Bind(wx.EVT_BUTTON, self._handle_start_with_password)
         self.stop_btn.Bind(wx.EVT_BUTTON, self._handle_stop_with_password)
-        for sn, button in self.machine_config_buttons.items():
+        self.save_setting_btn.Bind(wx.EVT_BUTTON, self._save_lidar_scan_speed)
+        if is_continuous_bidirectional_mode(self.strategy_name):
+            self.machine_config_buttons = {
+                0: self.left_side_btn, 1: self.left_lift_btn,
+                2: self.right_side_btn, 3: self.right_lift_btn,
+            }
+            self.left_side_btn.SetLabel("Side / Top / Bottom")
+            self.right_side_btn.SetLabel("Side / Top / Bottom")
+        for sn, button in getattr(self, "machine_config_buttons", {}).items():
             button.Bind(wx.EVT_BUTTON, lambda e, target_sn=sn: self._open_machine_config_with_password(target_sn))
         self.Bind(wx.EVT_CLOSE, self.on_close)
+
+    def _save_lidar_scan_speed(self, event):
+        try:
+            speed = int(self.chain_speed_text.GetValue().strip())
+            if not 1 <= speed <= 50:
+                raise ValueError(self._text("速度必须为1～50的整数，单位mm/s", "Speed must be an integer between 1 and 50 mm/s."))
+            TomlLoader.save({"lidar_scan_speed": speed}, f"{self.toml_path}\\ReadDataConfig.toml")
+            self.read_data_config["lidar_scan_speed"] = speed
+            if self.running:
+                self.control_queue.put({"lidar_scan_speed": speed})
+            print(self._text(f"激光扫描及回零速度已保存：{speed} mm/s", f"Scan and homing speed saved: {speed} mm/s"))
+        except (ValueError, OSError) as exc:
+            wx.MessageBox(self._text(f"保存失败：{exc}", f"Failed to save settings: {exc}"), self._text("提示", "Information"), wx.OK | wx.ICON_ERROR)
 
     def _ensure_password_config(self):
         password = str(self.mode_config.get("auth_password", "") or "").strip()
@@ -101,7 +129,8 @@ class MainFrameController(MainFrame):
         if not self._is_password_required():
             return True
 
-        dialog = PasswordDialog(self, account_name="河村电器")
+        english = is_continuous_bidirectional_mode(self.strategy_name)
+        dialog = PasswordDialog(self, account_name="Operator" if english else "河村电器", english=english)
         result = dialog.ShowModal()
         input_password = dialog.get_password()
         dialog.Destroy()
@@ -110,8 +139,8 @@ class MainFrameController(MainFrame):
             return False
 
         if input_password != self._get_configured_password():
-            error_message = "密码输入错误"
-            wx.MessageBox(error_message, "报警", wx.OK | wx.ICON_ERROR)
+            error_message = self._text("密码输入错误", "Incorrect password.")
+            wx.MessageBox(error_message, self._text("报警", "Alarm"), wx.OK | wx.ICON_ERROR)
             print(error_message)
             logger.warning(error_message)
             return False
@@ -133,7 +162,7 @@ class MainFrameController(MainFrame):
     def open_machine_config(self, sn: int):
         """打开设备配置对话框"""
         if self.control_queue is None:
-            wx.MessageBox("请先启动程序后再修改参数", "提示", wx.OK | wx.ICON_INFORMATION)
+            wx.MessageBox(self._text("请先启动程序后再修改参数", "Start the software before changing device settings."), self._text("提示", "Information"), wx.OK | wx.ICON_INFORMATION)
             return
 
         # 传递控制队列给对话框
@@ -156,11 +185,11 @@ class MainFrameController(MainFrame):
 
     def on_start(self, event):
         if self.running:
-            print("系统已在运行中")
+            print(self._text("系统已在运行中", "The system is already running."))
             return
 
         print("now start main.exe version is 2026/8/27 PM")
-        print("启动系统...")
+        print(self._text("启动系统...", "Starting system..."))
         self.running = True
         self._process_fault_handled = False
         self.process_heartbeats = {}
@@ -170,7 +199,7 @@ class MainFrameController(MainFrame):
         self.mode_config = TomlLoader.load(self.mode_config_path)
         spray_mode = int(self.mode_config.get("spray_mode", 0) or 0)
         mode_text = "手动模式" if spray_mode == 1 else "自动模式"
-        print(f"当前喷涂模式：{self.strategy_name}")
+        print(self._text(f"当前喷涂模式：{self.strategy_name}", f"Current operating mode: {self.strategy_name}"))
         logger.info(f"Current spray mode: {mode_text} (spray_mode={spray_mode})")
 
         # 启动激光采集进程，支持三种策略:
@@ -371,7 +400,7 @@ class MainFrameController(MainFrame):
         dead_processes = [process for process in self.processes if not process.is_alive()]
         if dead_processes:
             dead_names = ", ".join(type(process).__name__ for process in dead_processes)
-            self._handle_process_fault("检测到子进程异常退出", f"退出进程：{dead_names}")
+            self._handle_process_fault(self._text("检测到子进程异常退出", "A worker process exited unexpectedly"), self._text(f"退出进程：{dead_names}", f"Exited processes: {dead_names}"))
             return
 
         now = time.monotonic()
@@ -379,24 +408,27 @@ class MainFrameController(MainFrame):
         for process, heartbeat in self.process_heartbeats.items():
             elapsed = now - float(heartbeat.value)
             if elapsed > self.process_unresponsive_timeout_s:
-                stale_processes.append(f"{type(process).__name__}（{elapsed:.1f}秒无响应）")
+                stale_processes.append(self._text(f"{type(process).__name__}（{elapsed:.1f}秒无响应）", f"{type(process).__name__} (unresponsive for {elapsed:.1f} s)"))
 
         if stale_processes:
-            detail = "无响应进程：" + "，".join(stale_processes)
-            self._handle_process_fault("检测到子进程无响应", detail)
+            detail = self._text("无响应进程：", "Unresponsive processes: ") + "，".join(stale_processes)
+            self._handle_process_fault(self._text("检测到子进程无响应", "A worker process is unresponsive"), detail)
 
     def _handle_process_fault(self, title: str, detail: str):
         """同一故障只报警一次，并在弹窗前完成有界安全停机。"""
         if self._process_fault_handled:
             return
         self._process_fault_handled = True
-        message = f"{title}：{detail}。系统已主动停机，请检查激光/PLC连接、日志和硬件状态后重新启动。"
+        message = self._text(
+            f"{title}：{detail}。系统已主动停机，请检查激光/PLC连接、日志和硬件状态后重新启动。",
+            f"{title}: {detail}. System stopped. Check lidar/PLC connections, logs and hardware before restarting.",
+        )
         logger.error(message)
         self.status_text.AppendText(f"\n\n--- {title} ---\n{detail}\n")
-        self.status_text.AppendText("系统已主动停机，避免链条继续运动导致数据错位或撞枪\n")
-        self.status_text.AppendText("请检查激光/PLC连接、日志和硬件状态后重新启动系统\n")
+        self.status_text.AppendText(self._text("系统已主动停机，避免链条继续运动导致数据错位或撞枪\n", "System stopped to prevent unintended motion.\n"))
+        self.status_text.AppendText(self._text("请检查激光/PLC连接、日志和硬件状态后重新启动系统\n", "Check lidar/PLC connections, logs and hardware before restarting.\n"))
         self.on_stop(None)
-        wx.MessageBox(message, "子进程异常", wx.OK | wx.ICON_ERROR)
+        wx.MessageBox(message, self._text("子进程异常", "Worker Process Error"), wx.OK | wx.ICON_ERROR)
 
     def update_visualization(self, viz_queue):
         """从队列获取点云数据并更新GL画布"""
@@ -406,7 +438,7 @@ class MainFrameController(MainFrame):
                 if "points" in data:
                     points = data["points"]
                     if points.shape[0] > 200000:
-                        print(f"点数 {points.shape[0]} 超过阈值，进行降采样...")
+                        print(self._text(f"点数 {points.shape[0]} 超过阈值，进行降采样...", f"Point count {points.shape[0]} exceeds the display limit; downsampling..."))
                         points = self.filter.voxelReductionFilter(points, voxel_size=10.0)
                     wx.CallAfter(self.gl_canvas.set_points, points)
                 # 如果有方框数据，设置方框
@@ -423,7 +455,7 @@ class MainFrameController(MainFrame):
         if not self.running:
             return
 
-        print("停止系统...")
+        print(self._text("停止系统...", "Stopping system..."))
         self.running = False
 
         # 先通知全部子进程停止，再逐个有界等待，避免主界面卡在join()。

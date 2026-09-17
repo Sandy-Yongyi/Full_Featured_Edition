@@ -1,7 +1,7 @@
 import copy
 from typing import Any, Callable, Dict, List
 from model.utils.LoggerUtil import logger
-from model.utils.StrategyUtil import is_complete_workpiece_mode, validate_strategy_name
+from model.utils.StrategyUtil import is_complete_workpiece_mode, is_continuous_bidirectional_mode, validate_strategy_name
 from model.utils.TomlLoader import TomlLoader
 from model.utils.LidarDirectionUtil import SIDE_DIRECTIONS, UPPER_DIRECTIONS, get_active_lidar_config
 from model.formats.frame_by_frame.AxisFrameDataFormat import AxisFrameData, AxisData
@@ -11,7 +11,7 @@ class FrameQueueManager:
     """
     激光数据帧队列管理器（left / right / left_upper / right_upper）
     功能：
-        - frame_by_frame / continuous_bidirectional:
+        - frame_by_frame:
             - 根据 SystemConfig.toml 自动创建方向（left / right / left_upper / right_upper）
             - 每个方向一个固定长度 FIFO 队列
             - left / right 按 Y 轴范围初始化全零帧
@@ -19,6 +19,9 @@ class FrameQueueManager:
         - complete_workpiece:
             - 根据 machine_config 的安装方向动态创建方向队列
             - 每个方向下按设备 sn 建立固定长度的工件队列，初始值为 None
+        - continuous_bidirectional:
+            - 按激光方向创建三个原始点云位，依次为激光位、手补位、自动位
+            - 到位搬移、放行完成清理，不使用设备SN或链条FIFO移位
     """
 
     # 侧面方向（使用 Y 轴范围）
@@ -39,21 +42,98 @@ class FrameQueueManager:
         self.x_threshold = x_threshold
         self.strategy_name = validate_strategy_name(strategy_name)
         self.machine_config = machine_config or {}
-        self.frame_stack: Dict[str, List[AxisFrameData]] = {}
+        self.frame_stack: Dict[str, List[Any]] = {}
         self.queues: Dict[str, Dict[int, List[Any]]] = {}
         self.active_directions = ()
         self._initialize_stacks()
 
     def _initialize_stacks(self):
         """按策略初始化队列结构。"""
+        if is_continuous_bidirectional_mode(self.strategy_name):
+            self._initialize_continuous_stacks()
+            return
         if is_complete_workpiece_mode(self.strategy_name):
             self._initialize_complete_workpiece_queues()
             return
 
         self._initialize_frame_stacks()
 
+    def _initialize_continuous_stacks(self):
+        """每个激光方向固定三个原始点云位：激光、手补、自动。"""
+        system_cfg = TomlLoader.load(self.system_config_path)
+        self.active_directions = tuple(get_active_lidar_config(system_cfg))
+        if not self.active_directions:
+            raise ValueError("No lidar directions configured for continuous mode.")
+        self.stack_size = 3
+        self.frame_stack = {direction: [None, None, None] for direction in self.active_directions}
+        self.continuous_phases = ["empty", "empty", "empty"]
+        self.continuous_ack_armed = [False, False, False]
+        self.continuous_arrival_consumed = [False, False, False]
+
+    def continuous_slot_empty(self, index: int) -> bool:
+        return all(stack[index] is None for stack in self.frame_stack.values())
+
+    def put_continuous_workpiece(self, packet: dict, plc_status: int) -> bool:
+        """完整工件一次性写入各方向第0位，不覆盖尚未移走的数据。"""
+        if self.continuous_phases[0] != "empty" or not self.continuous_slot_empty(0):
+            return False
+        same_origin = int(packet.get("translate_data_origin", 2)) == 1
+        points_by_direction = {}
+        for direction in self.active_directions:
+            points = packet.get("all_data") if same_origin else packet.get(f"{direction}_data")
+            if points is None:
+                raise ValueError(f"Complete point cloud is missing direction: {direction}")
+            points_by_direction[direction] = points
+        for direction, points in points_by_direction.items():
+            self.frame_stack[direction][0] = points
+        self._start_continuous_release(0, plc_status)
+        logger.info("第三模式整趟原始点云已写入激光位[0]")
+        return True
+
+    def _start_continuous_release(self, index: int, plc_status: int):
+        self.continuous_phases[index] = "release"
+        # 放行完成必须先为0再变为1，不能把上个工件残留的高电平当成本次完成。
+        self.continuous_ack_armed[index] = not bool(plc_status & (1 << (2 + index * 2)))
+
+    def update_continuous_stations(self, plc_status: int) -> int:
+        """根据放行完成和下一站到位反馈搬移数据，返回PC Status放行位掩码。"""
+        for index in range(3):
+            arrived = bool(plc_status & (1 << (1 + index * 2)))
+            if not arrived:
+                self.continuous_arrival_consumed[index] = False
+            completed = bool(plc_status & (1 << (2 + index * 2)))
+            if self.continuous_phases[index] != "release":
+                continue
+            if not completed:
+                self.continuous_ack_armed[index] = True
+            elif self.continuous_ack_armed[index]:
+                if index == 2:
+                    for stack in self.frame_stack.values():
+                        stack[2] = None
+                    self.continuous_phases[2] = "empty"
+                    logger.info("自动位放行完成，清空原始点云位[2]")
+                else:
+                    self.continuous_phases[index] = "transit"
+                self.continuous_ack_armed[index] = False
+
+        # 从下游往上游搬移，允许不同工件占用三个位置，禁止一份数据同周期跨两站。
+        for source, target in ((1, 2), (0, 1)):
+            arrived = bool(plc_status & (1 << (1 + target * 2)))
+            if self.continuous_phases[source] != "transit" or not arrived or self.continuous_arrival_consumed[target]:
+                continue
+            if self.continuous_phases[target] != "empty" or not self.continuous_slot_empty(target):
+                continue
+            for stack in self.frame_stack.values():
+                stack[target], stack[source] = stack[source], None
+            self.continuous_phases[source] = "empty"
+            self.continuous_arrival_consumed[target] = True
+            self._start_continuous_release(target, plc_status)
+            logger.info(f"第三模式点云位[{source}]移至[{target}]，请求对应工位放行")
+
+        return sum(1 << (index + 1) for index, phase in enumerate(self.continuous_phases) if phase == "release")
+
     def _initialize_frame_stacks(self):
-        """初始化 frame_by_frame / continuous_bidirectional 模式的帧队列。"""
+        """初始化 frame_by_frame 模式的帧队列。"""
 
         try:
             system_cfg = TomlLoader.load(self.system_config_path)
@@ -211,6 +291,9 @@ class FrameQueueManager:
 
     def clear_frames(self, direction: str):
         """清空 frame_by_frame / continuous_bidirectional 模式的帧队列。"""
+        if is_continuous_bidirectional_mode(self.strategy_name):
+            # 三个工位的所有方向属于同一批工件，不能只清一个方向造成错位。
+            raise ValueError("Continuous slots are cleared by station arrival and release completion signals.")
         if is_complete_workpiece_mode(self.strategy_name):
             logger.error("clear_frames is not available in complete_workpiece mode")
             return

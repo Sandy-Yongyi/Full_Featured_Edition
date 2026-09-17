@@ -79,6 +79,7 @@ origin_pos = [1120, 1420, 1720, 2020, 2320, 2620]
 safe_pos = [0, 0, 0, 0]
 
 [1.flat]
+z_spray_position = 500
 out_front_x_offset = 150
 out_after_x_offset = 180
 in_front_x_offset = 40
@@ -143,6 +144,7 @@ origin_pos = [1120, 1420, 1720, 2020, 2320, 2620]
 safe_pos = [0, 0, 0, 0]
 
 [2.flat]
+z_spray_position = 500
 out_front_x_offset = 150
 out_after_x_offset = 180
 in_front_x_offset = 40

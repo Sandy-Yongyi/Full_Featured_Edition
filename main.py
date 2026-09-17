@@ -5,6 +5,7 @@ import ctypes
 import multiprocessing
 from model.utils.LoggerUtil import logger
 from control.MainFrameControl import MainApp
+from model.utils.TomlLoader import TomlLoader
 
 
 def is_already_running():
@@ -44,10 +45,11 @@ def main():
     logger.info(f"main process ID: {os.getpid()}")
 
     if is_already_running():
+        english = TomlLoader.load(os.path.join(os.getcwd(), "model", "tomls", "ModeConfig.toml")).get("strategy_name") == 3
         ctypes.windll.user32.MessageBoxW(
             0,
-            "程序已在运行中，请不要启动多个实例",
-            "错误提示",
+            "The software is already running. Do not start another instance." if english else "程序已在运行中，请不要启动多个实例",
+            "Already Running" if english else "错误提示",
             0x10  # MB_ICONERROR
         )
         logger.error("检测到已有实例运行，退出程序")

@@ -3,21 +3,24 @@ import sys
 import time
 import copy
 import math
+import queue
 import multiprocessing
 from typing import Any, cast
 from model.utils.LoggerUtil import check_and_rotate_log, logger
 from model.plc.PlcCommon import PlcManager
 from model.utils.TomlLoader import TomlLoader
-from model.plc.MovingFrameData import SendMovingFrameData
+from model.plc.MovingFrameData import ReceiveMovingFrameData, SendMovingFrameData
 from model.utils.FrameQueueManager import FrameQueueManager
 from model.formats.complete_workpiece.BlockDataFormat import BlockData
 from model.formats.frame_by_frame.AxisFrameDataFormat import AxisFrameData
 from model.dataprocess.complete_workpiece.GunDistributor import GunDistributor
 from model.motionplan.MotionFrameByFramePlanning import MotionFrameByFramePlanning
-from model.utils.StrategyUtil import is_complete_workpiece_mode, validate_strategy_name
+from model.utils.StrategyUtil import is_complete_workpiece_mode, is_continuous_bidirectional_mode, validate_strategy_name
 from model.utils.MachineConfigUtil import MACHINE_OFFSET_KEYS, get_machine_config_path, normalize_machine_config_offsets, normalize_machine_offset_values
 from model.motionplan.MotionCompleteWorkpiecePlanning import MotionCompleteWorkpiecePlanning
 from model.utils.ProcessHeartbeat import ProcessHeartbeat
+from model.motionplan.ContinuousLidarScan import ContinuousLidarScan
+from model.motionplan.MotionContinuousBidirectionalPlanning import MotionContinuousBidirectionalPlanning
 
 
 class SimulatedPlcData:
@@ -32,6 +35,9 @@ class SimulatedPlcData:
 
 
 class PlcCommunicationProcess(multiprocessing.Process):
+    def _text(self, chinese, english):
+        return english if is_continuous_bidirectional_mode(self.strategy_name) else chinese
+
     def __init__(self, raw_data_queue, pulse_queue, control_queue, machine_data_queue=None, strategy_name="frame_by_frame", heartbeat=None, heartbeat_interval_s: float = 1.0):
         super().__init__()
         self.raw_data_queue = raw_data_queue
@@ -86,7 +92,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
         self.runtime_param_keys = {
             "tracking", "y_move_min", "y_move_max",
             "x_pos_speed", "x_recip_speed", "y_pos_speed", "y_recip_speed", "z_zeroing_speed",
-            "x_status_offset",
+            "z_spray_position", "x_status_offset",
             "outside_total_cycles", "inside_total_cycles",
             "recip_reduce_distance",
             "out_front_x_offset", "out_after_x_offset", "in_front_x_offset", "in_after_x_offset",
@@ -196,7 +202,21 @@ class PlcCommunicationProcess(multiprocessing.Process):
         self.plc_config = TomlLoader.load(self.plc_config_path)
         self.plc_manager = PlcManager(self.plc_config_path)
         self.read_data_config = TomlLoader.load(self.read_data_config_path)
+        self.pulse_to_mm = float(self.read_data_config["pulse_to_mm"])
+        if not math.isfinite(self.pulse_to_mm) or self.pulse_to_mm <= 0:
+            raise ValueError(self._text("pulse_to_mm必须为正数", "pulse_to_mm must be a positive finite number."))
         self.machine_config = normalize_machine_config_offsets(TomlLoader.load(self.machine_config_path))
+        if is_continuous_bidirectional_mode(self.strategy_name):
+            self.runtime_spray_config = TomlLoader.load(self.spray_config_path)
+            self.continuous_scan = ContinuousLidarScan(self.read_data_config, self.runtime_spray_config)
+            self.continuous_bidirectional_planner = MotionContinuousBidirectionalPlanning()
+            self.frame_queue_manager = self._create_frame_queue_manager()
+            self._initialize_device_runtime_state(return_to_safe=True)
+            self.continuous_scan_pending = False
+            self.continuous_lidar_ready = False
+            self.continuous_reported_error = ""
+            logger.info("Continuous bidirectional mode initialized; lidar axes home before scanning when required.")
+            return
         self.runtime_spray_config = TomlLoader.load(self.spray_config_path)
         self.mode_config = TomlLoader.load(self.mode_config_path)
         self.frame_by_frame_motion_planner = MotionFrameByFramePlanning()
@@ -209,7 +229,6 @@ class PlcCommunicationProcess(multiprocessing.Process):
         self.max_pulse = self.read_data_config.get("max_pulse", 160000)
         self.max_retries = self.read_data_config.get("plc_send_max_retries", 3)
         self.diff_start_pulse = self.read_data_config.get("diff_start_pulse", 7)
-        self.pulse_to_mm = self.read_data_config.get("pulse_to_mm", 1)
         self.fifo_unit_mm = self.read_data_config.get("fifo_unit_mm", 2)
         self.workpiece_fifo_step_mm = float(self.read_data_config.get("workpiece_fifo_step_mm", 5) or 5)
         self.max_fifo = self._resolve_max_fifo()
@@ -225,15 +244,23 @@ class PlcCommunicationProcess(multiprocessing.Process):
 
         self.frame_queue_manager = self._create_frame_queue_manager()
 
+        self._initialize_device_runtime_state(return_to_safe=False)
+
+    def _initialize_device_runtime_state(self, return_to_safe: bool):
+        """Initialize configured spray devices for every motion strategy."""
         self.runtime_machine_config = {}
         for sn_str, cfg in self.machine_config.items():
             sn = int(sn_str)
             self.runtime_machine_config[sn] = self._build_runtime_machine_config(cfg)
-            runtime_offsets = {key: self.runtime_machine_config[sn][key] for key in MACHINE_OFFSET_KEYS}
+            runtime_offsets = {
+                key: self.runtime_machine_config[sn][key]
+                for key in MACHINE_OFFSET_KEYS
+                if key in self.runtime_machine_config[sn]
+            }
             logger.info(f"SN[{sn}] runtime offsets initialized: {runtime_offsets}")
         self.num_devices = max(int(k) for k in self.machine_config) + 1 if self.machine_config else 0
-        self.device_origin_complete = {sn: True for sn in range(self.num_devices)}
-        self.device_returning_to_origin = {sn: False for sn in range(self.num_devices)}
+        self.device_origin_complete = {sn: not return_to_safe for sn in range(self.num_devices)}
+        self.device_returning_to_origin = {sn: return_to_safe for sn in range(self.num_devices)}
         self.last_operate_state = 0
 
     def _build_runtime_machine_config(self, cfg: dict) -> dict:
@@ -294,9 +321,9 @@ class PlcCommunicationProcess(multiprocessing.Process):
                 # 初始连接失败后尝试重连
                 if not self._handle_connection_error(self.plc):
                     logger.error("PLC initial connection failed permanently. Exiting process.")
-                    print("PLC连接失败，请检查连接并重新运行软件")
+                    print(self._text("PLC连接失败，请检查连接并重新运行软件", "PLC connection failed. Check the connection and restart the software."))
                     return False
-            print("PLC连接成功.")
+            print(self._text("PLC连接成功.", "PLC connected."))
             self.plc_connected = True
 
             return True
@@ -312,7 +339,9 @@ class PlcCommunicationProcess(multiprocessing.Process):
             self._heartbeat.touch()
             if not self._update_plc_data():
                 continue
-            if is_complete_workpiece_mode(self.strategy_name):
+            if is_continuous_bidirectional_mode(self.strategy_name):
+                self._process_continuous_scan_cycle()
+            elif is_complete_workpiece_mode(self.strategy_name):
                 self._process_workpiece_data()
                 self._sync_complete_workpiece_positions()
             else:
@@ -322,14 +351,30 @@ class PlcCommunicationProcess(multiprocessing.Process):
             self._update_enable_value()
             check_and_rotate_log()
             # 处理数据发送，发送给PLC
+            moving_frame = self._axis_to_moving_frame()  # 按当前模式转换为运动帧数据
             if not self.simulation_mode:
                 # logger.info(f"PLC Operate=0b{int(self.plc_data.Operate):016b}")
-                moving_frame = self._axis_to_moving_frame()  # 转换为运动帧数据
                 logger.debug(f"moving now send moving_frame {moving_frame}")
-                self.plc.send_frame(moving_frame)
+                try:
+                    self.plc.send_frame(moving_frame)
+                except OSError:
+                    if is_continuous_bidirectional_mode(self.strategy_name):
+                        self.pulse_queue.put({"pulse": -999, "fifo": 0, "status": "stopped"})
+                    raise
+            if is_continuous_bidirectional_mode(self.strategy_name):
+                self._publish_continuous_scan_state()
 
     def _update_plc_data(self):
         try:
+            if is_continuous_bidirectional_mode(self.strategy_name):
+                if self.simulation_mode:
+                    self.plc_data = ReceiveMovingFrameData()
+                else:
+                    self.plc_data = self.plc.scan(self.connection_type)
+                logger.info(f"continuous_bidirectional_mode: Status={self.plc_data.Status}, Operate={self.plc_data.Operate}, "
+                            f"HeartBeat={self.plc_data.HeartBeat}, AxisList={self.plc_data.AxisList}")
+                return True
+
             # 模拟模式处理逻辑
             if self.simulation_mode:
                 current_time = time.time()
@@ -363,6 +408,9 @@ class PlcCommunicationProcess(multiprocessing.Process):
             return True
 
         except (ConnectionResetError, BrokenPipeError, OSError) as e:
+            if is_continuous_bidirectional_mode(self.strategy_name):
+                self.continuous_scan._fault("PLC communication lost; current scan discarded.")
+                self.pulse_queue.put({"pulse": -999, "fifo": 0, "status": "stopped"})
             # 处理连接异常
             if not self.simulation_mode:
                 logger.error(f"Connection error during operation: {str(e)}")
@@ -457,6 +505,56 @@ class PlcCommunicationProcess(multiprocessing.Process):
                     self._handle_frame_packet_received(fifo_data, repeat_count)
         except Exception as e:
             logger.error(f"Error processing raw data from queue: {e}")
+
+    def _process_continuous_scan_cycle(self):
+        """处理第三种模式的采数状态和整趟点云；运动帧由统一规划入口生成。"""
+        while True:
+            try:
+                packet = self.raw_data_queue.get_nowait()
+            except queue.Empty:
+                break
+            if not isinstance(packet, dict):
+                continue
+            if "lidar_status" in packet:
+                self.lidar_status = int(packet["lidar_status"])
+                self.continuous_lidar_ready = True
+                # 遮挡和设备严重异常锁存；断线允许恢复后反向重采。
+                if self.lidar_status in (1, 2):
+                    self.continuous_scan._fault(f"Lidar acquisition fault: status={self.lidar_status}")
+                elif self.lidar_status == 3:
+                    self.continuous_scan.request_retry()
+                if packet.get("reset_queue"):
+                    if self.continuous_scan.stage == "retry_wait":
+                        self.continuous_scan.retry_acknowledged = True
+                    else:
+                        self.continuous_scan.request_retry()
+            if "all_data" in packet or any(key.endswith("_data") for key in packet):
+                if self.continuous_scan.stage == "fault":
+                    continue
+                if not self.continuous_scan_pending or self.continuous_scan.stage != "complete":
+                    self.continuous_scan._fault("Received complete point cloud in an unexpected scan stage.")
+                    continue
+                try:
+                    stored = self.frame_queue_manager.put_continuous_workpiece(packet, int(self.plc_data.Status))
+                except ValueError as exc:
+                    self.continuous_scan._fault(str(exc))
+                    continue
+                if not stored:
+                    self.continuous_scan._fault("Laser station is occupied; refusing to overwrite point cloud.")
+                    continue
+                self.continuous_scan_pending = False
+        if self.lidar_status in (1, 2):
+            self.continuous_scan._fault(f"Lidar acquisition fault: status={self.lidar_status}")
+
+    def _publish_continuous_scan_state(self):
+        """运动帧发送后向采数进程发布合成脉冲、FIFO和扫描状态。"""
+        error = self.continuous_scan.error
+        if error and error != self.continuous_reported_error:
+            self.continuous_reported_error = error
+            logger.error(error)
+            print(f"Lidar scan fault: {error}; resolve the fault and restart the software.")
+        pulse = self.continuous_scan.pulse
+        self.pulse_queue.put({"pulse": pulse, "fifo": self._pulse_to_chaincountcm(pulse), "status": self.continuous_scan.motion_status})
 
     def _process_workpiece_data(self):
         """complete_workpiece 模式处理整件数据队列。"""
@@ -712,6 +810,11 @@ class PlcCommunicationProcess(multiprocessing.Process):
                     logger.warning("control_queue msg is not dict, skipped")
                     continue
 
+                if "lidar_scan_speed" in msg and is_continuous_bidirectional_mode(self.strategy_name):
+                    self.continuous_scan.set_speed(msg["lidar_scan_speed"])
+                    logger.info(f"Scan and homing speed updated to {self.continuous_scan.speed} mm/s")
+                    continue
+
                 # machine config
                 if "machine" in msg:
                     machine_msg = msg.get("machine")
@@ -772,6 +875,8 @@ class PlcCommunicationProcess(multiprocessing.Process):
         logger.info(f"Spray runtime config updated: {self.runtime_spray_config}")
 
     def _axis_to_moving_frame(self) -> SendMovingFrameData:
+        if is_continuous_bidirectional_mode(self.strategy_name):
+            return self.continuous_bidirectional_planner.build_moving_frame(self)
         if is_complete_workpiece_mode(self.strategy_name):
             return self.complete_workpiece_planner.build_moving_frame(self)
         return self.frame_by_frame_motion_planner.build_moving_frame(self)
@@ -820,7 +925,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
         for attempt in range(max_retries):
             try:
                 self._heartbeat.touch()
-                print(f"PLC连接失败，正在尝试第{attempt+1}次重连...")
+                print(self._text(f"PLC连接失败，正在尝试第{attempt+1}次重连...", f"PLC connection failed; reconnect attempt {attempt+1}..."))
                 try:
                     plc.disconnect(connection_type=self.connection_type)
                 except Exception:
@@ -829,7 +934,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
                 # 尝试重连
                 if plc.connect(connection_type=self.connection_type):
                     logger.info("PLC reconnected successfully")
-                    print("PLC重连成功.")
+                    print(self._text("PLC重连成功.", "PLC reconnected."))
                     self.plc_connected = True
                     return True
             except Exception as e:

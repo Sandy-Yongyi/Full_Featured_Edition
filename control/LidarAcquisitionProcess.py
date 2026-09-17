@@ -27,6 +27,9 @@ from control.LidarAcquisitionStrategies import AcquisitionStrategyFactory
 
 
 class LidarAcquisitionProcess(multiprocessing.Process):
+    def _text(self, chinese, english):
+        return english if is_continuous_bidirectional_mode(self.strategy_name) else chinese
+
     """
     统一的激光雷达采数处理类
     支持三种策略: continuous_bidirectional, frame_by_frame, complete_workpiece
@@ -55,6 +58,7 @@ class LidarAcquisitionProcess(multiprocessing.Process):
         self.raw_data_queue = raw_data_queue
         self._heartbeat = ProcessHeartbeat(heartbeat, heartbeat_interval_s)
         self.read_data_config = TomlLoader.load(f"{config_dir}\\ReadDataConfig.toml")
+        self.scan_position_tolerance = int(TomlLoader.load(f"{config_dir}\\SprayConfig.toml")["spray_pos_tolerance"])
         self.process_config = TomlLoader.load(f"{config_dir}\\ProcessConfig.toml")
         self.draw_type = int(self.read_data_config.get("draw_type", 1))
 
@@ -151,10 +155,10 @@ class LidarAcquisitionProcess(multiprocessing.Process):
 
         try:
             if not self._initialize_connections():
-                print("激光连接失败，请检查连接并重新运行软件")
+                print(self._text("激光连接失败，请检查连接并重新运行软件", "Lidar connection failed. Check the connection and restart the software."))
                 logger.error("Lidar connection failed")
                 return
-            print(f"成功连接所有激光，启动采集策略: {self.strategy_name}")
+            print(self._text(f"成功连接所有激光，启动采集策略: {self.strategy_name}", f"All lidars connected. Acquisition strategy: {self.strategy_name}"))
             self._init_direction_states()  # 初始化所有方向的状态数据
             self._acquisition_loop()
 
@@ -180,12 +184,12 @@ class LidarAcquisitionProcess(multiprocessing.Process):
 
             skip_processing = False
             if self.lidar_reconnected:
-                logger.info("lidar_reconnected Skipping processing for first workpiece after reconnection")
-                skip_processing = True
+                logger.info("Lidar reconnected; continuous mode delivers the next complete rescan, other modes skip the first workpiece")
+                skip_processing = not is_continuous_bidirectional_mode(self.strategy_name)
                 self.lidar_reconnected = False
             if self.plc_reconnected:
-                logger.info("plc_reconnected Skipping processing for first workpiece after reconnection")
-                skip_processing = True
+                logger.info("PLC reconnected; continuous mode delivers the next complete rescan, other modes skip the first workpiece")
+                skip_processing = not is_continuous_bidirectional_mode(self.strategy_name)
                 self.plc_reconnected = False
 
             if is_complete_workpiece_mode(self.strategy_name):
@@ -338,7 +342,12 @@ class LidarAcquisitionProcess(multiprocessing.Process):
     def _invalidate_current_workpiece(self, reason: str):
         """当前工件作废。FrameByFrame 模式下立即清空队列并进入100空帧跳过。"""
         logger.warning(f"Current workpiece invalidated due to lidar issue: {reason}")
-        print(f"当前工件作废：{reason}，设备回安全位，等待下一个工件")
+        if is_continuous_bidirectional_mode(self.strategy_name):
+            print(f"Scan discarded: {reason}. After reconnection, reposition to the endpoint and rescan in reverse. Serious faults require a restart.")
+            # 必须在阻塞重连之前通知PLC，不能等_capture_frame返回后再上报。
+            self._push_lidar_status_update()
+        else:
+            print(f"当前工件作废：{reason}，设备回安全位，等待下一个工件")
 
         if is_frame_by_frame_mode(self.strategy_name):
             self._reset_framebyframe_state_after_fault()
@@ -403,10 +412,10 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                     pass
                 if lidar.connect():
                     logger.info(f"Successfully connected to {direction} lidar {lidar_id}")
-                    print(f"成功连接{direction}激光 {lidar_id}")
+                    print(self._text(f"成功连接{direction}激光 {lidar_id}", f"Connected to {direction} lidar {lidar_id}"))
                     return True
 
-                print(f"{lidar_id}激光连接失败，正在尝试第{attempt+1}次重连...")
+                print(self._text(f"{lidar_id}激光连接失败，正在尝试第{attempt+1}次重连...", f"Lidar {lidar_id} connection failed; reconnect attempt {attempt+1}..."))
                 logger.warning(f"Attempt {attempt+1} failed for {direction} lidar {lidar_id}")
 
                 if attempt < max_retries - 1:
@@ -451,7 +460,7 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                 logger.info(f"Initialize current_fifo with first received value: {fifo_value}")
             elif self.current_fifo != fifo_value:
                 old_fifo = self.current_fifo
-                if not self._is_next_fifo(old_fifo, fifo_value):
+                if not is_continuous_bidirectional_mode(self.strategy_name) and not self._is_next_fifo(old_fifo, fifo_value):
                     logger.warning(f"FIFO jump detected: old={old_fifo}, new={fifo_value}")
                 self.current_fifo = fifo_value
 
@@ -547,6 +556,9 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                     logger.error(f"{lidar_id} Lidar poll connection error: {str(e)}")
                     polled_status = 3
                     self.lidar_disconnected = True
+                    if is_continuous_bidirectional_mode(self.strategy_name):
+                        self.lidar_status = 3
+                        self._push_lidar_status_update()
                     if self._connect_with_retry(lidar, lidar_id, direction):
                         # 本周期已经采数失败，只恢复连接；下一周期重新发起完整采数请求。
                         self.lidar_reconnected = True
@@ -583,7 +595,7 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                 self.lidar_status = max(self.lidar_status, 3)
                 self.lidar_disconnected = True
                 if self.movement_detected or self.any_scanning_active:
-                    self._invalidate_current_workpiece(f"{direction}方向激光 {lidar_id} 连接断开")
+                    self._invalidate_current_workpiece(self._text(f"{direction}方向激光 {lidar_id} 连接断开", f"{direction} lidar {lidar_id} disconnected"))
                 if not self._connect_with_retry(lidar, lidar_id, direction):
                     return np.empty((0, 3)), np.empty((0, 3))
                 # 本周期丢弃残缺采数；重连后的下一周期再发送新的完整请求。
@@ -594,7 +606,7 @@ class LidarAcquisitionProcess(multiprocessing.Process):
             data = all_data[0]
             self.lidar_status = max(self.lidar_status, int(all_data[1]))
             if int(all_data[1]) == 2 and (self.movement_detected or self.any_scanning_active):
-                self._invalidate_current_workpiece(f"{direction}方向激光 {lidar_id} 异常")
+                self._invalidate_current_workpiece(self._text(f"{direction}方向激光 {lidar_id} 异常", f"{direction} lidar {lidar_id} reported an error"))
             if data is not None:
                 same_origin_all_points.extend(data.same_cartesian)
                 diff_origin_all_points.extend(data.diff_cartesian)
@@ -657,25 +669,27 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                     continue
 
                 # 数据标准化
-                state.xyz_data = self.data_split.normalize_xyz_points(state.xyz_data, self.read_data_config["max_pulse"] / self.read_data_config["pulse_to_mm"])
+                if is_continuous_bidirectional_mode(self.strategy_name):
+                    points = np.asarray(state.xyz_data)
+                    state.xyz_data = points[np.lexsort((points[:, 0], points[:, 1], points[:, 2]))]
+                else:
+                    state.xyz_data = self.data_split.normalize_xyz_points(state.xyz_data, self.read_data_config["max_pulse"] / self.read_data_config["pulse_to_mm"])
                 normalized_data = np.copy(state.xyz_data)
                 # 创建保存任务
-                if is_continuous_bidirectional_mode(self.strategy_name):
-                    filename = point_cloud_path + f"\\{direction}_{self.capture_direction}_{timestemp}.txt"
-                else:
-                    filename = point_cloud_path + f"\\{direction}_{timestemp}.txt"
+                filename = point_cloud_path + f"\\{direction}_{timestemp}.txt"
                 task = self.thread_pool.apply_async(self._async_save_data, (normalized_data, str(filename), direction))  # type: ignore
                 self.save_tasks.append(task)
                 logger.info(f"Saving {direction} data to {filename}")
 
         # 保存合并数据
         if len(self.all_xyz_data) > 0:
-            self.all_xyz_data = self.data_split.normalize_xyz_points(self.all_xyz_data, self.read_data_config["max_pulse"] / self.read_data_config["pulse_to_mm"])
-            combined_normalized = np.copy(self.all_xyz_data)
             if is_continuous_bidirectional_mode(self.strategy_name):
-                filename = point_cloud_path + f"\\combined_{self.capture_direction}_{timestemp}.txt"
+                points = np.asarray(self.all_xyz_data)
+                self.all_xyz_data = points[np.lexsort((points[:, 0], points[:, 1], points[:, 2]))]
             else:
-                filename = point_cloud_path + f"\\combined_{timestemp}.txt"
+                self.all_xyz_data = self.data_split.normalize_xyz_points(self.all_xyz_data, self.read_data_config["max_pulse"] / self.read_data_config["pulse_to_mm"])
+            combined_normalized = np.copy(self.all_xyz_data)
+            filename = point_cloud_path + f"\\combined_{timestemp}.txt"
             task = self.thread_pool.apply_async(self._async_save_data, (combined_normalized, str(filename), "combined"))  # type: ignore
             self.save_tasks.append(task)
             logger.info(f"Saving combined data to {filename}")

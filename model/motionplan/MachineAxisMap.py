@@ -1,15 +1,19 @@
 """
 设备轴索引映射配置模块。
 
-根据当前策略对应 MachineConfig1/2/3.toml 的 type 和 install_orietation，查找 PLC AxisList
-中对应的轴索引。当前按帧模式设备顺序：
+按设备 type 和 install_orietation 查找本项目收发共用的 PLC AxisList 索引。
+轴按报文排列，不按设备连续排列；以下均为从0开始的索引：
 
-    sn=0 xn_updown2 left     : 0~3   (y1, x1, y2, x2)
-    sn=1 out_2d_servo left   : 4~5   (y, x)
-    sn=2 xn_updown2 right    : 6~9   (y1, x1, y2, x2)
-    sn=3 out_2d_servo right  : 10~11 (y, x)
+    0 左侧面Z，1 右侧面Z
+    2 左二维Y，3 左二维X，4 右二维Y，5 右二维X
+    6 左侧面Y2，7 左侧面X2，8 左侧面R2
+    9 右侧面Y2，10 右侧面X2，11 右侧面R2
+    12 左侧面Y1，13 左侧面X1，14 左侧面R1
+    15 右侧面Y1，16 右侧面X1，17 右侧面R1
+    18 激光201，19 激光202，20 激光203，21 激光204
 
-旧七轴类型更名为 xn_updown4，避免与本项目四轴顶底设备混用。
+轴名称统一使用 x/x1/x2，索引查询和指令写入使用相同名称。
+映射不决定设备SN、轴限位或运动策略，配置与规划需单独按本项目适配。
 """
 
 from model.utils.LoggerUtil import logger
@@ -22,8 +26,8 @@ INT16_MAX = 32767
 
 
 AXIS_LIMIT_KEY: dict[str, dict[str, int]] = {
-    "xn_updown2": {"y": 0, "x": 1},
-    "out_2d_servo": {"y": 0, "x": 1},
+    "xn_rotate": {"z": 0, "y": 1, "x": 2, "r": 3},
+    "z_2d_lift": {"y": 0, "x": 1},
 }
 
 XN_UPDOWN2_MAX_LIMIT_INDEX = {
@@ -79,15 +83,27 @@ def get_axis_safe_pos(machine_cfg: dict, axis_name: str, default: int = 0) -> in
 
 
 MACHINE_AXIS_MAP = {
-    "xn_updown2": {
-        "left": dict(y1=0, x1=1, y2=2, x2=3),
-        "right": dict(y1=6, x1=7, y2=8, x2=9),
+    # 第三模式：同侧两台设备共用Z，但仅xn_rotate拥有Z指令写入权。
+    "xn_rotate": {
+        "left": dict(z=0, y1=12, x1=13, r1=14, y2=6, x2=7, r2=8),
+        "right": dict(z=1, y1=15, x1=16, r1=17, y2=9, x2=10, r2=11),
     },
-    "out_2d_servo": {
-        "left": dict(y=4, x=5),
-        "right": dict(y=10, x=11),
+    "z_2d_lift": {
+        "left": dict(y=2, x=3),
+        "right": dict(y=4, x=5),
     },
 }
+
+
+LIDAR_AXIS_MAP = {"201": 18, "202": 19, "203": 20, "204": 21}
+
+
+def get_lidar_axis_index(lidar_id: str | int) -> int:
+    """获取激光运动轴在收发 AxisList 中的索引。"""
+    lidar_key = str(lidar_id)
+    if lidar_key not in LIDAR_AXIS_MAP:
+        raise ValueError(f"未知激光轴: {lidar_id}, 可用编号: {list(LIDAR_AXIS_MAP)}")
+    return LIDAR_AXIS_MAP[lidar_key]
 
 
 def get_axis_map(machine_type: str, orientation: str) -> dict:
@@ -144,7 +160,7 @@ def _limit_axis_command(machine_cfg: dict, axis_name: str, axis_data: AxisData) 
     if min_position > max_position:
         raise ValueError(f"轴 {axis_name} 的位置限位无效: {min_position} > {max_position}")
     max_speed = get_axis_speed_limit(machine_cfg, axis_name)
-    status = 0 if machine_type == "out_2d_servo" else int(axis_data.Status)
+    status = 0 if machine_type in ("xn_rotate", "z_2d_lift") else int(axis_data.Status)
     return AxisData(Pos=clamp_to_limit_yx(int(axis_data.Pos), min_position, max_position), Speed=clamp_speed(int(axis_data.Speed), max_speed), Status=status)
 
 

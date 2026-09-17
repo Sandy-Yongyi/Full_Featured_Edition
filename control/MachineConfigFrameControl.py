@@ -17,9 +17,12 @@ def _get_param_range_rules(sn: int | None = None, strategy_name="frame_by_frame"
     y_speed_max = get_axis_speed_limit(machine_cfg, "y", 590) if machine_cfg else 590
     z_speed_max = get_axis_speed_limit(machine_cfg, "z", 240) if machine_cfg else 240
     y_pos_min, y_pos_max = get_axis_position_limits(machine_cfg, "y", 0, 430) if machine_cfg else (0, 430)
+    z_pos_min, z_pos_max = get_axis_position_limits(machine_cfg, "z", 0, 900) if machine_cfg else (0, 900)
 
     try:
         spray_cfg = TomlLoader.load(spray_config_path)
+        z_tolerance = int(spray_cfg.get("spray_pos_tolerance", 10) or 10)
+        z_spray_position_max = max(z_pos_min, z_pos_max - z_tolerance - 1)
         return {
             "tracking": (0, 1),
             "y_move_min": (y_pos_min, y_pos_max),
@@ -46,6 +49,7 @@ def _get_param_range_rules(sn: int | None = None, strategy_name="frame_by_frame"
             "in_z_after_offset": _load_range(spray_cfg, "in_z_after_offset", 50, 300),
             "z_back_speed": (0, z_speed_max),
             "z_zeroing_speed": (0, z_speed_max),
+            "z_spray_position": (z_pos_min, z_spray_position_max),
             "outside_total_cycles": _load_range(spray_cfg, "outside_total_cycles", 1, 5),
             "inside_total_cycles": _load_range(spray_cfg, "inside_total_cycles", 1, 5),
             "recip_reduce_distance": _load_range(spray_cfg, "recip_reduce_distance", 0, 300),
@@ -79,6 +83,7 @@ def _get_param_range_rules(sn: int | None = None, strategy_name="frame_by_frame"
             "in_z_after_offset": (50, 300),
             "z_back_speed": (0, z_speed_max),
             "z_zeroing_speed": (0, z_speed_max),
+            "z_spray_position": (z_pos_min, max(z_pos_min, z_pos_max - 11)),
             "outside_total_cycles": (1, 5),
             "inside_total_cycles": (1, 5),
             "recip_reduce_distance": (0, 300),
@@ -106,6 +111,10 @@ def _normalize_config_for_ui(cfg: dict) -> dict:
     flat_cfg = normalized.get(FLAT_CONFIG_KEY)
     if isinstance(flat_cfg, dict):
         normalized[FLAT_CONFIG_KEY] = normalize_machine_offset_values(_normalize_origin_pos_for_ui(flat_cfg))
+    if normalized.get("type") == "xn_side":
+        flat_cfg = dict(normalized.get(FLAT_CONFIG_KEY) or {})
+        flat_cfg.setdefault("z_spray_position", 500)
+        normalized[FLAT_CONFIG_KEY] = flat_cfg
     return normalized
 
 
@@ -132,22 +141,32 @@ def load_machine_config_for_ui(sn: int, strategy_name="frame_by_frame") -> dict:
 def save_machine_config_from_ui(sn: int, values: dict, control_queue=None, strategy_name="frame_by_frame"):
     """保存机器配置并通知PLC进程"""
     param_range_rules = _get_param_range_rules(sn, strategy_name)
-    _validate_params(values, param_range_rules)
-    normalized_values = _normalize_ui_values_for_save(values)
+    if strategy_name == "continuous_bidirectional":
+        for key, value in values.items():
+            if key in param_range_rules:
+                lower, upper = param_range_rules[key]
+                if not lower <= value <= upper:
+                    raise ValueError(f"{key} must be between {lower} and {upper}.")
+        normalized_values = normalize_machine_offset_values(values, fill_missing=False)
+    else:
+        _validate_params(values, param_range_rules)
+        normalized_values = _normalize_ui_values_for_save(values)
     toml_path = _get_toml_path(strategy_name)
-    _save_to_toml(sn, normalized_values, toml_path)
+    _save_to_toml(sn, normalized_values, toml_path, english=strategy_name == "continuous_bidirectional")
     if control_queue is not None:
-        _notify_plc(sn, normalized_values, control_queue, toml_path)
+        _notify_plc(sn, normalized_values, control_queue, toml_path, english=strategy_name == "continuous_bidirectional")
 
 
 def _validate_params(values: dict, param_range_rules: dict):
     validate_machine_params(values, param_range_rules)
 
 
-def _save_to_toml(sn: int, values: dict, toml_path: str):
+def _save_to_toml(sn: int, values: dict, toml_path: str, english=False):
     cfg = TomlLoader.load(toml_path)
     sn_key = str(sn)
     if sn_key not in cfg:
+        if english:
+            raise RuntimeError(f"Device SN[{sn}] is missing from {os.path.basename(toml_path)}.")
         raise RuntimeError(f"{os.path.basename(toml_path)} 中不存在 SN[{sn}] 配置")
     existing_config = cfg.get(sn_key, {})
     merged_config = {**existing_config, **values}
@@ -156,7 +175,7 @@ def _save_to_toml(sn: int, values: dict, toml_path: str):
     TomlLoader.save(cfg, toml_path)
 
 
-def _notify_plc(sn: int, values: dict, control_queue, toml_path: str):
+def _notify_plc(sn: int, values: dict, control_queue, toml_path: str, english=False):
     """通知PLC进程配置已更新"""
     try:
         cfg = TomlLoader.load(toml_path)
@@ -168,13 +187,13 @@ def _notify_plc(sn: int, values: dict, control_queue, toml_path: str):
             config_update_msg = {"machine": {"sn": sn, **full_config}}
             control_queue.put(config_update_msg)
             logger.info(f"{sn} send config to plc: {config_update_msg}")
-            print(f"已通知PLC进程更新SN[{sn}]的配置：{config_update_msg}")
+            print(f"Device SN[{sn}] settings sent to PLC process." if english else f"已通知PLC进程更新SN[{sn}]的配置：{config_update_msg}")
         else:
             # 如果配置文件中不存在该SN，只发送UI传过来的值
             config_update_msg = {"machine": {"sn": sn, **values}}
             control_queue.put(config_update_msg)
             logger.info(f"{sn} send config to plc (new SN): {config_update_msg}")
-            print(f"已通知PLC进程更新SN[{sn}]的配置(新SN): {config_update_msg}")
+            print(f"New device SN[{sn}] settings sent to PLC process." if english else f"已通知PLC进程更新SN[{sn}]的配置(新SN): {config_update_msg}")
     except Exception as e:
         logger.error(f"send config to plc failed: {e}")
-        print(f"通知PLC进程失败: {e}")
+        print(f"Failed to notify PLC process: {e}" if english else f"通知PLC进程失败: {e}")

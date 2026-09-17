@@ -2,7 +2,10 @@ import wx
 
 
 class PasswordDialog(wx.Dialog):
-    def __init__(self, parent, account_name="河村电器", title="身份验证"):
+    def __init__(self, parent, account_name="河村电器", title="身份验证", english=False):
+        self.english = english
+        if english:
+            title = "Authentication"
         super().__init__(parent, title=title, style=wx.DEFAULT_DIALOG_STYLE)
         self.account_name = account_name
         self.password_ctrl = None
@@ -14,19 +17,19 @@ class PasswordDialog(wx.Dialog):
         form_sizer = wx.FlexGridSizer(rows=0, cols=2, hgap=10, vgap=12)
         form_sizer.AddGrowableCol(1, 1)
 
-        form_sizer.Add(wx.StaticText(self, label="账户名："), 0, wx.ALIGN_CENTER_VERTICAL)
+        form_sizer.Add(wx.StaticText(self, label="Account:" if self.english else "账户名："), 0, wx.ALIGN_CENTER_VERTICAL)
         account_ctrl = wx.TextCtrl(self, value=self.account_name, style=wx.TE_READONLY)
         form_sizer.Add(account_ctrl, 1, wx.EXPAND)
 
-        form_sizer.Add(wx.StaticText(self, label="密码："), 0, wx.ALIGN_CENTER_VERTICAL)
+        form_sizer.Add(wx.StaticText(self, label="Password:" if self.english else "密码："), 0, wx.ALIGN_CENTER_VERTICAL)
         self.password_ctrl = wx.TextCtrl(self, style=wx.TE_PASSWORD | wx.TE_PROCESS_ENTER)
         form_sizer.Add(self.password_ctrl, 1, wx.EXPAND)
 
         main_sizer.Add(form_sizer, 0, wx.ALL | wx.EXPAND, 15)
 
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        confirm_btn = wx.Button(self, wx.ID_OK, "确认")
-        cancel_btn = wx.Button(self, wx.ID_CANCEL, "取消")
+        confirm_btn = wx.Button(self, wx.ID_OK, "Confirm" if self.english else "确认")
+        cancel_btn = wx.Button(self, wx.ID_CANCEL, "Cancel" if self.english else "取消")
 
         btn_sizer.AddStretchSpacer()
         btn_sizer.Add(confirm_btn, 0, wx.RIGHT, 10)
