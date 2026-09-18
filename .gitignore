@@ -144,6 +144,10 @@ cython_debug/
 *.png
 result.json
 
+# PowerPoint build caches and validation artifacts
+.ppt_build/
+.codex-finalizer/
+
 #sonar
 sonar-project.properties
 .scannerwork/
