@@ -65,18 +65,20 @@ class MotionOutUpPlanning:
 
     def _state_wait_front_outside(self, ctx):
         sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
+        self._log_outside_z_trace(ctx, "wait_front_outside")
         axis_cmds = {"y": self._build_idle_axis()}
-        if self._has_front_arrived(ctx):
+        if self._has_front_arrived(ctx) or self._has_front_over_arrived(ctx):
             self._work_states[sn]["state"] = "spray_outside"
             logger.info(f"SN[{sn}] out_up arrived front outside, start spray")
         return axis_cmds, False
 
     def _state_spray_outside(self, ctx):
         sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
+        self._log_outside_z_trace(ctx, "spray_outside")
         chain_running = self._is_chain_running(ctx["plc_data"])
         status = 1 if chain_running and self._is_spray_enabled(ctx) else 0
         axis_cmds = {"y": self._build_axis(status=status)}
-        if self._has_after_arrived(ctx):
+        if self._has_after_arrived(ctx) or self._has_after_over_arrived(ctx):
             self._work_states[sn]["state"] = "finish"
             logger.info(f"SN[{sn}] out_up arrived after outside, finish spray")
         return axis_cmds, False
@@ -110,6 +112,10 @@ class MotionOutUpPlanning:
         front_z_machine, front_z_chain = self._get_front_z_pair(ctx)
         return self.motion_util.has_arrived_z(front_z_machine, front_z_chain)
 
+    def _has_front_over_arrived(self, ctx):
+        front_z_machine, front_z_chain = self._get_front_z_pair(ctx)
+        return self.motion_util.has_over_arrive_z(front_z_machine, front_z_chain)
+
     def _has_after_arrived(self, ctx):
         after_z_machine, after_z_chain = self._get_after_z_pair(ctx)
         return self.motion_util.has_arrived_z(after_z_machine, after_z_chain)
@@ -123,3 +129,17 @@ class MotionOutUpPlanning:
 
     def _get_after_z_pair(self, ctx):
         return WorkpieceMotionHelper.get_outside_after_z_pair(ctx, "out_z_after_offset", "outside_z_max")
+
+    def _log_outside_z_trace(self, ctx, state_name):
+        sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
+        outside = ctx["outside_data"][0]
+        front_z_machine, front_z_chain = self._get_front_z_pair(ctx)
+        after_z_machine, after_z_chain = self._get_after_z_pair(ctx)
+        logger.debug(
+            f"SN[{sn}] out_up state={state_name}, "
+            f"front_z_machine={front_z_machine}, front_z_chain={front_z_chain}, "
+            f"after_z_machine={after_z_machine}, after_z_chain={after_z_chain}, "
+            f"fifo_frame_pos={ctx['fifo_frame_pos']}, "
+            f"outside_z_min={int(getattr(outside, 'outside_z_min', 0) or 0)}, "
+            f"outside_z_max={int(getattr(outside, 'outside_z_max', 0) or 0)}"
+        )

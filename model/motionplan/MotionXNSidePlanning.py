@@ -28,8 +28,10 @@ class MotionXNSidePlanning:
 
     def reset_side_motion_state(self, sn=None):
         WorkpieceMotionHelper.reset_state(self._work_states, sn)
-        state_prefix = None if sn is None else f"sn{int(sn)}:"
-        self.recip_manager.reset_states(state_prefix)
+        if sn is None:
+            self.recip_manager.reset_states()
+            return
+        self.recip_manager.reset_states(self._state_prefix(int(sn), ""))
 
     def auto_xn_side_machine_move(self, machine_cfg, runtime_cfg, plc_data, frame_queue):
         """
@@ -94,13 +96,7 @@ class MotionXNSidePlanning:
 
     @staticmethod
     def _create_initial_state():
-        return {
-            "state": "wait_front_outside",
-            "inside_idx": 0,
-            "spray_mode": None,
-            "skip_inside_recip": False,
-            "mode_z_target": None,
-        }
+        return {"state": "wait_front_outside", "inside_idx": 0, "spray_mode": None, "skip_inside_recip": False, "mode_z_target": None}
 
     def _build_context(self, machine_cfg, runtime_cfg, plc_data, block, spray_mode):
         ctx = WorkpieceMotionHelper.build_block_context(machine_cfg, runtime_cfg, plc_data, block)
@@ -167,6 +163,8 @@ class MotionXNSidePlanning:
         sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
         current_inside_idx = self._get_current_inside_idx(ctx)
         state_prefix_map = {
+            "wait_front_outside": [self._state_prefix(sn, "wait_front_outside")],
+            "wait_after_outside": [self._state_prefix(sn, "wait_after_outside")],
             "recip_outside": [self._state_prefix(sn, "flat_outside")],
             "recip_front_outside": [self._state_prefix(sn, "front_outside")],
             "recip_front_inside": [self._state_prefix(sn, f"inside_{current_inside_idx}_front")],
@@ -252,13 +250,8 @@ class MotionXNSidePlanning:
         sn = int(machine_cfg.get("sn", 0) or 0)
         self.reset_side_motion_state(sn)
         self._work_states[sn] = self._create_initial_state()
-        self._work_states[sn].update(
-            state="wait_flat_handoff",
-            spray_mode="flat",
-            mode_z_target=z_target,
-            flat_handoff=True,
-        )
-        # The coordinator removes only the old queue head; keep the new commands and state.
+        self._work_states[sn].update(state="wait_flat_handoff", spray_mode="flat", mode_z_target=z_target, flat_handoff=True)
+        # The coordinator removes only the old queue head; retain the new commands and state.
         next_state = self._state_wait_flat_handoff(next_ctx)
         if next_state:
             self._work_states[sn]["state"] = next_state
@@ -286,7 +279,7 @@ class MotionXNSidePlanning:
     def _state_wait_front_outside(self, ctx):
         spray_mode = ctx.get("spray_mode")
         x_status = 1 if spray_mode == "cabinet" and self._has_front_outside_x_status_arrived(ctx) else 0
-        ctx["side_machine"] = self._build_position_axes(ctx, self._get_outside_group(ctx), -90, x_status=x_status)
+        ctx["side_machine"] = self._build_position_axes(ctx, self._get_outside_group(ctx), -90, x_status=x_status, y_recip_state_key="wait_front_outside")
         sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
 
         if self._has_front_outside_arrived(ctx):
@@ -573,7 +566,7 @@ class MotionXNSidePlanning:
 
     def _state_wait_after_outside(self, ctx):
         x_status = 1 if self._has_after_outside_x_status_arrived(ctx) else 0
-        ctx["side_machine"] = self._build_position_axes(ctx, self._get_outside_group(ctx), 90, x_status=x_status)
+        ctx["side_machine"] = self._build_position_axes(ctx, self._get_outside_group(ctx), 90, x_status=x_status, y_recip_state_key="wait_after_outside")
         sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
 
         if self._has_after_outside_arrived(ctx):
@@ -632,7 +625,7 @@ class MotionXNSidePlanning:
         ctx["side_machine"] = self.motiontotarget.hold_current_position(ctx["machine_cfg"], ctx["plc_data"])
         return None
 
-    def _build_position_axes(self, ctx, gun_group, r_angle, x_status=0):
+    def _build_position_axes(self, ctx, gun_group, r_angle, x_status=0, y_recip_state_key=None):
         r_angle = self._resolve_side_r_angle(r_angle)
         machine_cfg = ctx["machine_cfg"]
         plc_data = ctx["plc_data"]
@@ -810,7 +803,7 @@ class MotionXNSidePlanning:
         front_offset = int(runtime_cfg.get("in_z_front_offset", machine_cfg.get("in_z_front_offset", 0)) or 0)
         after_offset = int(runtime_cfg.get("in_z_after_offset", machine_cfg.get("in_z_after_offset", 0)) or 0)
         spray_radius = int(machine_cfg.get("spray_radius", 0) or 0)
-        return front_offset + after_offset + 2 * spray_radius + 2 * self.spray_pos_tolerance
+        return (front_offset + after_offset + 2 * spray_radius + 2 * self.spray_pos_tolerance) < inside_z_span
 
     def _log_no_enterable_inside(self, ctx, stage_name):
         sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
@@ -1030,7 +1023,7 @@ class MotionXNSidePlanning:
 
     def _has_front_outside_x_status_arrived(self, ctx):
         machine_z, chain_z = WorkpieceMotionHelper.get_outside_front_z_pair(ctx, "out_z_front_offset", "outside_z_min")
-        machine_z -= self._get_x_status_offset(ctx)
+        machine_z -= self._get_x_front_status_offset(ctx)
         return self._has_z_arrived_or_over(ctx, machine_z, chain_z)
 
     def _has_front_outside_over_arrived(self, ctx):
@@ -1043,7 +1036,7 @@ class MotionXNSidePlanning:
 
     def _has_after_outside_x_status_arrived(self, ctx):
         machine_z, chain_z = WorkpieceMotionHelper.get_outside_after_z_pair(ctx, "out_z_after_offset", "outside_z_max")
-        machine_z -= self._get_x_status_offset(ctx)
+        machine_z -= self._get_x_after_status_offset(ctx)
         return self._has_z_arrived_or_over(ctx, machine_z, chain_z)
 
     def _has_after_outside_over_arrived(self, ctx):
@@ -1080,10 +1073,17 @@ class MotionXNSidePlanning:
         compare_machine_z = self._get_compare_machine_z(ctx, machine_z)
         return self.motion_util.has_arrived_z(compare_machine_z, chain_z) or self.motion_util.has_over_arrive_z(compare_machine_z, chain_z)
 
-    def _get_x_status_offset(self, ctx):
+    def _get_x_front_status_offset(self, ctx):
+        """前外侧提前出粉偏移。"""
         machine_cfg = ctx["machine_cfg"]
         runtime_cfg = ctx["runtime_cfg"]
-        return int(runtime_cfg.get("x_status_offset", machine_cfg.get("x_status_offset", 0)) or 0)
+        return int(runtime_cfg.get("x_front_status_offset", machine_cfg.get("x_front_status_offset", 0)) or 0)
+
+    def _get_x_after_status_offset(self, ctx):
+        """后外侧独立提前出粉偏移。"""
+        machine_cfg = ctx["machine_cfg"]
+        runtime_cfg = ctx["runtime_cfg"]
+        return int(runtime_cfg.get("x_after_status_offset", machine_cfg.get("x_after_status_offset", 0)) or 0)
 
     def _get_work_z_target(self, machine_cfg):
         _, z_max_limit = get_axis_position_limits(machine_cfg, "z")
@@ -1114,7 +1114,20 @@ class MotionXNSidePlanning:
         return abs(current_z - self._get_mode_z_target(ctx)) <= self.spray_pos_tolerance
 
     def _move_to_mode_safe(self, ctx):
-        return self._build_safe_axes_for_z_target(ctx, self._get_mode_z_target(ctx))
+        machine_cfg = ctx["machine_cfg"]
+        axis_cmds, _ = self.motiontotarget.move_to_origin_safe(machine_cfg, ctx["runtime_cfg"], ctx["plc_data"])
+        if axis_cmds is None:
+            axis_cmds = self.motiontotarget.hold_current_position(machine_cfg, ctx["plc_data"])
+        axis_cmds["z"] = self._build_z_axis(machine_cfg, self._get_mode_z_target(ctx), self._get_safe_z_speed(ctx))
+        return axis_cmds, self._has_mode_safe_axes_arrived(ctx)
+
+    def _has_mode_safe_axes_arrived(self, ctx):
+        machine_cfg = ctx["machine_cfg"]
+        for axis_name in machine_cfg.get("axis_type", []):
+            target = self._get_mode_z_target(ctx) if axis_name == "z" else get_axis_safe_pos(machine_cfg, axis_name, default=0)
+            if abs(self._get_axis_pos(machine_cfg, ctx["plc_data"], axis_name) - target) > self.spray_pos_tolerance:
+                return False
+        return True
 
     def _get_safe_z_target(self, machine_cfg):
         return get_axis_safe_pos(machine_cfg, "z", default=0)

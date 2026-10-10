@@ -132,7 +132,10 @@ class XNSideGunDistributor(BaseGunDistributor):
             top_idx = max_idx
         else:
             top_idx = self._find_top_down_point_gun(target_y_max, origin_pos, axis_num, scan_span)
-        bottom_idx = self._find_top_down_point_gun(target_y_min, origin_pos, axis_num, scan_span)
+        if target_y_min < origin_pos[0]:
+            bottom_idx = 0
+        else:
+            bottom_idx = self._find_top_down_point_gun(target_y_min, origin_pos, axis_num, scan_span)
         if top_idx is None or bottom_idx is None:
             return guns
 

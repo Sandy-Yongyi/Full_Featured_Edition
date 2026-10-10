@@ -72,6 +72,27 @@ class MotionReciprocate:
             total_cycles_key=total_cycles_key,
         )
 
+    def build_side_wait_y_reciprocate(self, machine_cfg, runtime_cfg, plc_data, gun_group, state_key):
+        """提前出粉等待阶段只生成 Y 往复指令，不接管 X、Z。"""
+        y_range = self._get_group_y_range(machine_cfg, self._get_enabled_guns(gun_group), runtime_cfg)
+        if y_range is None:
+            self._y_states.pop(state_key, None)
+            return None
+        y_lower, y_upper = y_range
+        state = self._y_states.setdefault(state_key, YReciprocateState(phase="to_upper"))
+        y_cur = self._get_axis_pos(machine_cfg, plc_data, "y")
+        if y_lower == y_upper:
+            y_target = y_lower
+        else:
+            # 缩减后行程可能很短，避免两端到位区间重叠导致静止时反复换向。
+            turn_tolerance = min(self.tolerance, (y_upper - y_lower - 1) // 2)
+            if state.phase == "to_upper" and y_cur >= y_upper - turn_tolerance:
+                state.phase = "to_lower"
+            elif state.phase == "to_lower" and y_cur <= y_lower + turn_tolerance:
+                state.phase = "to_upper"
+            y_target = y_lower if state.phase == "to_lower" else y_upper
+        return self._build_y_axis(machine_cfg, y_target, self._get_y_speed(runtime_cfg, machine_cfg))
+
     def build_side_end_face_reciprocate(self, machine_cfg, runtime_cfg, plc_data, gun_group,
                                         x_target, y_min, y_max, r_angle, state_key, z_target, z_speed,
                                         x_active_status=2):
@@ -760,6 +781,7 @@ class MotionReciprocate:
     def _build_group_xr_axes(self, machine_cfg, plc_data, spray_num, enabled_by_id,
                              x_target, x_speed, x_status, r_angle, hold_current=False, x_status_by_id=None):
         axis_cmds = {}
+        has_r_axes = any(str(axis_name).startswith("r") for axis_name in machine_cfg.get("axis_type", []) or [])
         x_min_limit, x_max_limit = get_axis_position_limits(machine_cfg, "x")
         r_min_limit, r_max_limit = get_axis_position_limits(machine_cfg, "r")
         x_speed_limit = get_axis_speed_limit(machine_cfg, "x")
@@ -768,25 +790,31 @@ class MotionReciprocate:
         x_safe = clamp_to_limit_yx(get_axis_safe_pos(machine_cfg, "x", default=0), x_min_limit, x_max_limit)
         r_safe = clamp_to_limit_r(get_axis_safe_pos(machine_cfg, "r", default=0), r_min_limit, r_max_limit)
         x_target = clamp_to_limit_yx(int(x_target or 0), x_min_limit, x_max_limit)
+        if has_r_axes:
+            r_min_limit, r_max_limit = get_axis_position_limits(machine_cfg, "r")
+            r_speed_limit = get_axis_speed_limit(machine_cfg, "r")
+            r_speed = r_speed_limit
+            r_safe = clamp_to_limit_r(get_axis_safe_pos(machine_cfg, "r", default=0), r_min_limit, r_max_limit)
 
         arrived = True
         for gun_idx in range(spray_num):
             axis_idx = gun_idx + 1
             x_name = f"x{axis_idx}"
-            r_name = f"r{axis_idx}"
             gun = enabled_by_id.get(gun_idx)
             x_cur = self._get_axis_pos(machine_cfg, plc_data, x_name)
             gun_enabled = gun is not None and int(getattr(gun, "gun_y_enable", 0) or 0) == 1
 
             if not gun_enabled:
                 axis_cmds[x_name] = build_axis(x_safe, x_speed, 0, x_speed_limit)
-                axis_cmds[r_name] = build_axis(r_safe, r_speed, 0, r_speed_limit)
+                if has_r_axes:
+                    axis_cmds[f"r{axis_idx}"] = build_axis(r_safe, r_speed, 0, r_speed_limit)
                 continue
 
             final_x_target = x_cur if hold_current else x_target
             final_x_status = x_status if x_status_by_id is None else x_status_by_id.get(gun_idx, x_status)
             axis_cmds[x_name] = build_axis(final_x_target, x_speed, final_x_status, x_speed_limit)
-            axis_cmds[r_name] = build_axis(clamp_to_limit_r(r_angle, r_min_limit, r_max_limit), r_speed, 0, r_speed_limit)
+            if has_r_axes:
+                axis_cmds[f"r{axis_idx}"] = build_axis(clamp_to_limit_r(r_angle, r_min_limit, r_max_limit), r_speed, 0, r_speed_limit)
             if abs(x_cur - x_target) > self.tolerance:
                 arrived = False
 
