@@ -3,7 +3,6 @@
 """
 
 import multiprocessing
-import multiprocessing.pool
 import os
 import sys
 import time
@@ -15,13 +14,12 @@ from typing import Dict
 from model.utils.TomlLoader import TomlLoader
 from model.lidar.LidarCommon import LidarManager
 from model.dataprocess.DataSplitting import DataSplitting
-from model.utils.LoggerUtil import logger, check_and_rotate_log, manage_log_files, log_directory
+from model.utils.LoggerUtil import logger, check_and_rotate_log
 from model.dataprocess.DataFilter import DataFilter
 from model.lidar.LidarDirectionState import LidarDirectionState
-from model.utils.PointsFileUtil import manage_points_files
+from model.utils.PointCloudSaveBuffer import PointCloudSaveBuffer
 from model.utils.LidarDirectionUtil import filter_active_direction_map
 from model.utils.StrategyUtil import is_complete_workpiece_mode, is_continuous_bidirectional_mode, is_frame_by_frame_mode, validate_strategy_name
-from model.utils.WorkpieceOriginUtil import transform_points_for_origin
 from model.utils.ProcessHeartbeat import ProcessHeartbeat
 from control.LidarAcquisitionStrategies import AcquisitionStrategyFactory
 
@@ -36,7 +34,9 @@ class LidarAcquisitionProcess(multiprocessing.Process):
     """
 
     def __init__(self, pulse_queue, raw_data_queue, viz_queue, lidar_config: dict, config_dir: str,
-                 strategy_name: str = "frame_by_frame", heartbeat=None, heartbeat_interval_s: float = 1.0):
+                 strategy_name: str = "frame_by_frame", heartbeat=None, heartbeat_interval_s: float = 1.0,
+                 save_pool_descriptor=None, save_task_queue=None, save_ack_queue=None,
+                 save_status_queue=None, stop_event=None):
         """
         初始化采数处理
 
@@ -87,8 +87,16 @@ class LidarAcquisitionProcess(multiprocessing.Process):
         self.data_dir = Path(os.getcwd() + "\\data")
         self.data_dir.mkdir(exist_ok=True)
         self.all_xyz_data = np.empty((0, 3))
-        self.thread_pool = None
-        self.save_tasks = []
+        self.save_pool_descriptor = save_pool_descriptor
+        self.save_task_queue = save_task_queue
+        self.save_ack_queue = save_ack_queue
+        self.save_status_queue = save_status_queue
+        self.stop_event = stop_event
+        self.save_buffer = None
+        self._processing_chunks = {}
+        self._save_job_counter = 0
+        self._last_log_check = 0.0
+        self._buffer_warning = False
 
         # 方向状态
         self.direction_states: Dict = {}
@@ -147,7 +155,6 @@ class LidarAcquisitionProcess(multiprocessing.Process):
         """主程序入口"""
         logger.info(f"LidarAcquisitionProcess.run() entered, pid={os.getpid()}")
         self._heartbeat.touch(force=True)
-        self.thread_pool = multiprocessing.pool.ThreadPool(processes=self.read_data_config["threadpool_size"])
 
         if hasattr(self, "stdout"):
             sys.stdout = self.stdout
@@ -155,6 +162,9 @@ class LidarAcquisitionProcess(multiprocessing.Process):
             sys.stderr = self.stderr
 
         try:
+            if self.save_pool_descriptor is None or self.save_task_queue is None:
+                raise RuntimeError("Point cloud saving requires a sibling save process and shared memory pool")
+            self.save_buffer = PointCloudSaveBuffer(self.save_pool_descriptor, self.save_ack_queue)
             if not self._initialize_connections():
                 print(self._text("激光连接失败，请检查连接并重新运行软件", "Lidar connection failed. Check the connection and restart the software."))
                 logger.error("Lidar connection failed")
@@ -164,14 +174,16 @@ class LidarAcquisitionProcess(multiprocessing.Process):
             self._acquisition_loop()
 
         except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
+            logger.exception(f"Unexpected error: {str(e)}")
+            if self.save_status_queue is not None:
+                self.save_status_queue.put({"type": "error", "source": "acquisition", "message": str(e)})
 
         finally:
             self._cleanup()
 
     def _acquisition_loop(self):
         """主采集循环"""
-        while not self.shutdown_flag:
+        while not self._stop_requested():
             self._heartbeat.touch()
             if self.plc_disconnected:
                 self._update_pulse_data()
@@ -181,6 +193,8 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                 continue
 
             self.strategy.monitor_movement(self)
+            if self._stop_requested():
+                break
             self._save_workpiece_data()
 
             skip_processing = False
@@ -204,10 +218,36 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                     if moved_mm <= self.read_data_config["start_skip_mm"]:
                         skip_processing = True
             if not skip_processing:
+                self._prepare_processing_data()
                 self.strategy.send_raw_data(self)
 
             self.strategy.reset_for_next_workpiece(self)
-            self._heartbeat.sleep(0.1)
+            if not is_frame_by_frame_mode(self.strategy_name):
+                self._heartbeat.sleep(0.1)
+
+    def _stop_requested(self):
+        return self.shutdown_flag or (self.stop_event is not None and self.stop_event.is_set())
+
+    def _prepare_processing_data(self):
+        """Preserve whole-workpiece computation interfaces, independently of saving.
+
+        Relative workpieces still need normalized arrays for block finding; continuous
+        passes still need absolute Z/Y/X order. No file I/O or save ACK is involved.
+        """
+        if is_frame_by_frame_mode(self.strategy_name):
+            return
+        threshold = self.read_data_config["max_pulse"] / self.read_data_config["pulse_to_mm"]
+        for channel, chunks in self._processing_chunks.items():
+            points = np.concatenate(chunks)
+            if is_continuous_bidirectional_mode(self.strategy_name):
+                points = points[np.lexsort((points[:, 0], points[:, 1], points[:, 2]))]
+            else:
+                points = self.data_split.normalize_xyz_points(points, threshold)
+            if channel == "combined":
+                self.all_xyz_data = points
+            else:
+                self.direction_states[channel].xyz_data = points
+        self._processing_chunks = {}
 
     def _initialize_connections(self) -> bool:
         """初始化硬件连接"""
@@ -250,17 +290,27 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                 ))
                 # 添加到各方向点云数据
                 if self.read_data_config["translate_data_origin"] == 1:
-                    state.xyz_data = np.vstack((state.xyz_data, same_origin_frame_data)) if state.xyz_data.size > 0 else same_origin_frame_data
+                    direction_frame = same_origin_frame_data
                 else:
-                    state.xyz_data = np.vstack((state.xyz_data, diff_origin_frame_data)) if state.xyz_data.size > 0 else diff_origin_frame_data
+                    direction_frame = diff_origin_frame_data
+                self.save_buffer.append(direction, direction_frame)
+                if not is_frame_by_frame_mode(self.strategy_name):
+                    self._processing_chunks.setdefault(direction, []).append(direction_frame)
 
                 # 添加到当前帧数据
                 current_frame_data = np.vstack((current_frame_data, same_origin_frame_data)) if current_frame_data.size > 0 else same_origin_frame_data
         if current_frame_data.size > 0:
             sorted_frame_data = self.data_split.AxisSorting_yx(current_frame_data, self.read_data_config["y_threshold"])
             if isinstance(sorted_frame_data, np.ndarray) and sorted_frame_data.size > 0:
-                self.all_xyz_data = np.vstack((self.all_xyz_data, sorted_frame_data)) if self.all_xyz_data.size > 0 else sorted_frame_data
+                self.save_buffer.append("combined", sorted_frame_data)
+                if not is_frame_by_frame_mode(self.strategy_name):
+                    self._processing_chunks.setdefault("combined", []).append(sorted_frame_data)
                 logger.debug(f"save_valid_data_core - z_value: {z_value}, total accumulated data shape: {len(sorted_frame_data)}")
+        self.save_buffer.poll_acks()
+        low = self.save_buffer.free_blocks <= max(1, self.save_buffer.descriptor["block_count"] // 8)
+        if low and not getattr(self, "_buffer_warning", False):
+            logger.warning(f"Point cloud save buffer low: {self.save_buffer.free_blocks} free blocks")
+        self._buffer_warning = low
 
     def _get_forward_pulse_diff(self, start_pulse: int, current_pulse: int | None = None) -> int:
         """计算脉冲从 start_pulse 向前运行到 current_pulse 的距离，支持回绕。
@@ -336,6 +386,9 @@ class LidarAcquisitionProcess(multiprocessing.Process):
         self.finish_test = False
         self.all_xyz_data = np.empty((0, 3))
         self.scan_base_pulse = None
+        self._processing_chunks = {}
+        if self.save_buffer is not None:
+            self.save_buffer.release_unsaved()
         for state in self.direction_states.values():
             state.reset()
         logger.info("System reset for next workpiece")
@@ -405,6 +458,8 @@ class LidarAcquisitionProcess(multiprocessing.Process):
         max_retries = self.read_data_config["lidar_connect_max_retries"]
 
         for attempt in range(max_retries):
+            if self._stop_requested():
+                return False
             try:
                 self._heartbeat.touch()
                 try:
@@ -433,6 +488,12 @@ class LidarAcquisitionProcess(multiprocessing.Process):
     def _update_pulse_data(self):
         """更新脉冲数据 - 只消费队列中的最新值，减少积压处理开销"""
         was_disconnected = self.plc_disconnected
+        if self.save_buffer is not None:
+            self.save_buffer.poll_acks()
+        now = time.monotonic()
+        if now - self._last_log_check >= 60:
+            check_and_rotate_log()
+            self._last_log_check = now
         latest_pulse_data = None
 
         while True:
@@ -658,102 +719,53 @@ class LidarAcquisitionProcess(multiprocessing.Process):
 
         return self.data_split.AxisSorting_yx(passthrough_filtered, config["y_threshold"])
 
-    def _save_workpiece_data(self):
-        """保存工件数据"""
-        check_and_rotate_log()
-        manage_log_files(log_directory)
-        manage_points_files()
-
-        timestemp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        point_cloud_path = str(self.data_dir) + "\\points"
-
-        if not os.path.exists(point_cloud_path):
-            os.makedirs(point_cloud_path)
-
-        for direction, state in self.direction_states.items():
-            if state.has_scanned:
-                # 检查数据有效性
-                if state.xyz_data is None or (isinstance(state.xyz_data, np.ndarray) and state.xyz_data.size == 0) or \
-                        (isinstance(state.xyz_data, list) and len(state.xyz_data) == 0):
-                    logger.warning(f"No valid data for direction '{direction}', skipping save")
-                    continue
-
-                # 数据标准化
-                if is_continuous_bidirectional_mode(self.strategy_name):
-                    points = np.asarray(state.xyz_data)
-                    state.xyz_data = points[np.lexsort((points[:, 0], points[:, 1], points[:, 2]))]
-                else:
-                    state.xyz_data = self.data_split.normalize_xyz_points(state.xyz_data, self.read_data_config["max_pulse"] / self.read_data_config["pulse_to_mm"])
-                normalized_data = np.copy(state.xyz_data)
-                # 创建保存任务
-                filename = point_cloud_path + f"\\{direction}_{timestemp}.txt"
-                task = self.thread_pool.apply_async(self._async_save_data, (normalized_data, str(filename), direction))  # type: ignore
-                self.save_tasks.append(task)
-                logger.info(f"Saving {direction} data to {filename}")
-
-        # 保存合并数据
-        if len(self.all_xyz_data) > 0:
-            if is_continuous_bidirectional_mode(self.strategy_name):
-                points = np.asarray(self.all_xyz_data)
-                self.all_xyz_data = points[np.lexsort((points[:, 0], points[:, 1], points[:, 2]))]
-            else:
-                self.all_xyz_data = self.data_split.normalize_xyz_points(self.all_xyz_data, self.read_data_config["max_pulse"] / self.read_data_config["pulse_to_mm"])
-            combined_normalized = np.copy(self.all_xyz_data)
-            filename = point_cloud_path + f"\\combined_{timestemp}.txt"
-            task = self.thread_pool.apply_async(self._async_save_data, (combined_normalized, str(filename), "combined"))  # type: ignore
-            self.save_tasks.append(task)
-            logger.info(f"Saving combined data to {filename}")
-
-        if not (is_complete_workpiece_mode(self.strategy_name) and self.draw_type == 2):
-            viz_points = self.all_xyz_data[:, :3] if self.all_xyz_data.size > 0 else np.empty((0, 3))
-            if int(self.read_data_config.get("translate_data_origin", 1) or 1) == 1:
-                viz_points = transform_points_for_origin(
-                    viz_points,
-                    self.read_data_config,
-                )
-            viz_data = {"points": viz_points, "boxes": None}
-            try:
-                self.viz_queue.put(viz_data, block=False)
-                logger.info("Put visualization data to queue")
-            except queue.Full:
-                logger.warning("Visualization queue is full")
-
-    def _async_save_data(self, data, filename: str, direction: str):
-        """异步保存数据"""
-        try:
-            np.savetxt(filename, data, fmt="%.1f")
-            logger.info(f"{direction} data saved to {filename}")
-        except Exception as e:
-            logger.error(f"Error saving {direction} data: {str(e)}")
+    def _save_workpiece_data(self, incomplete=False):
+        """Seal existing shared blocks; never normalize or copy a workpiece here."""
+        if self.save_buffer is None or not self.save_buffer.has_data:
+            return
+        started = time.perf_counter()
+        self._save_job_counter += 1
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        job_id = f"{stamp}_{os.getpid()}_{self._save_job_counter}"
+        suffix = job_id
+        job = self.save_buffer.seal(
+            job_id, filename_suffix=suffix, incomplete=incomplete,
+            strategy=self.strategy_name,
+            normalization="absolute_sorted" if is_continuous_bidirectional_mode(self.strategy_name) else "relative_z",
+            preview_enabled=not (is_complete_workpiece_mode(self.strategy_name) and getattr(self, "draw_type", 1) == 2),
+            preview_origin_config={key: self.read_data_config[key] for key in ("workpiece_origin_side", "workpiece_origin_reference_x") if key in self.read_data_config}
+                if int(self.read_data_config.get("translate_data_origin", 1)) == 1 else None,
+            z_reset_threshold=self.read_data_config["max_pulse"] / self.read_data_config["pulse_to_mm"])
+        self.save_task_queue.put_nowait(job)
+        logger.info(f"Submitted point cloud job {job_id}, channels={list(job['channels'])}, "
+                    f"pending={self.save_buffer.pending_jobs}, submit_s={time.perf_counter() - started:.6f}, "
+                    f"incomplete={incomplete}")
 
     def _cleanup(self):
-        """清理资源"""
-        logger.info("Stopping all threads...")
+        """Submit the captured part on stop, then close this process's mappings."""
         self.shutdown_flag = True
-
-        for task in self.save_tasks:
+        # PLC has already stopped consuming live frames. Discarding its remaining
+        # pipe backlog must not prevent the save-task feeder from flushing on exit.
+        self.raw_data_queue.cancel_join_thread()
+        if self.save_buffer is not None:
             try:
-                task.get(timeout=30)
-            except multiprocessing.TimeoutError:
-                logger.warning("Save task timeout")
-            except Exception as e:
-                logger.error(f"Error waiting for save task: {str(e)}")
-
-        if self.thread_pool:
-            self.thread_pool.close()
-            self.thread_pool.join()
-
-        if self.lidar_manager:
-            for direction, lidar_ids in self.lidar_config.items():
+                self._save_workpiece_data(incomplete=True)
+            except Exception as exc:
+                logger.exception("Failed to submit final point cloud")
+                if self.save_status_queue is not None:
+                    self.save_status_queue.put({"type": "error", "source": "acquisition",
+                                                "message": f"Final point cloud not submitted: {exc}"})
+            finally:
+                self.save_buffer.close()
+        manager = getattr(self, "lidar_manager", None)
+        if manager is not None:
+            for lidar_ids in self.lidar_config.values():
                 for lidar_id in lidar_ids:
-                    lidar = self.lidar_manager.get_lidar(lidar_id)
                     try:
-                        lidar.disconnect()
-                        logger.info(f"Disconnected {direction} lidar {lidar_id}")
-                    except Exception as e:
-                        logger.error(f"Error disconnecting {direction} lidar {lidar_id}: {str(e)}")
-
-        logger.info("All connections closed")
+                        manager.get_lidar(lidar_id).disconnect()
+                    except Exception as exc:
+                        logger.error(f"Error disconnecting {lidar_id}: {exc}")
+        logger.info("Acquisition connections closed")
 
     def _check_linked_stop_continuous(self):
         """链接停止逻辑"""

@@ -1,5 +1,39 @@
 # LiDAR 采数系统 — 参数配置使用文档
 
+### 2026-10 三种模式独立点云保存
+
+保存服务每次启动均通过原有 `TomlLoader.load()` 重新读取实际运行目录的 `ReadDataConfig.toml`，包括 `point_cloud_save_block_mb`、`point_cloud_save_block_count` 和其他保存参数，不使用窗口创建时缓存的旧保存配置。`TomlLoader.py` 保持项目原版；修改参数后停止并重新启动采集服务生效。
+
+`ModeConfig.toml` 选择 `frame_by_frame` / `complete_workpiece` / `continuous_bidirectional` 的方式保持原样。自动采集时主界面同级启动 `PointCloudSaveProcess`，三种模式均通过共享内存传点云块，独立任务队列传块清单，归一化/保存排序与磁盘写入在保存进程执行。
+
+| 模式 | 保存坐标和顺序 | 下游兼容 |
+|---|---|---|
+| `frame_by_frame` | 原相对 Z 回绕修正并归零、原各方向及 combined 顺序 | 原逐帧 `raw_data_queue`，包含 FIFO 和 PLC 连接代数 |
+| `complete_workpiece` | 原相对 Z 归一化 | 原同原点 `all_data` / 独立原点方向数组和 stop_pulse；分区、分枪仍由原处理链执行 |
+| `continuous_bidirectional` | **绝对 Z 不归零**，按 Z/Y/X 排序，含反向扫描 | 原整趟数据与 stop_pulse 交付给 PLC；异常扫描仍作废后重采 |
+
+按工件/连续模式采集期间用帧列表积累计算输入，结束时仍要为原下游算法组装、归一化或排序整件数组；这属于计算交付，既不等待保存确认，也不写文件。独立保存不表示这些模式全部计算开销消失。
+
+新增 `ReadDataConfig.toml` 参数：
+
+| 参数 | 默认值 | 用途 |
+|---|---|---|
+| `point_cloud_save_block_mb` / `point_cloud_save_block_count` | 16 / 32 | 约512 MiB块池，按最大点云与积压调整；float64 XYZ每点24字节，各方向与combined分别占空间 |
+| `point_cloud_save_format` | `txt` | 保留 TXT %.1f；可选 NPY，保留处理后完整浮点精度 |
+| `point_cloud_preview_voxel_mm` | 10 | 仅预览体素降采样；0显示全部点，无固定点数上限 |
+| `point_cloud_acquisition_stop_timeout_s` | 15 | 采集封存及退出等待秒数 |
+| `point_cloud_save_shutdown_timeout_s` | 120 | 保存排空等待秒数 |
+
+各工件使用独立块，成功保存后 ACK 回收。缓冲接近满时预警，耗尽时报告故障并停止，不能静默丢点/覆盖；磁盘持续慢于采集时有限内存无法无限积压。`threadpool_size` 保留兼容，保存不再读取。
+
+文件名增加微秒、进程号与工件序号。先写 `.part`，成功关闭后改名；`.complete.json` 给出工件文件清单、点数和 incomplete 标记。正常停止的已采部分标记 incomplete；连续模式作废扫描沿用原丢弃规则。写入失败、强制终止、没有完成清单的工件不能视为完整。保留原最多1000历史文件清理策略，不表示无限保留文件。
+
+可视化在保存端生成，右原点镜像只改变预览，不改文件。`complete_workpiece + draw_type=2` 保留处理端线框预览，保存端不覆盖它；其他模式显示保存端点云预览。关闭降采样会增加显示成本。
+
+停止/关闭时保持密码与中英文界面，先结束采集与控制，再排空已提交保存任务，窗口继续响应；排空前禁用重新启动。PLC停止仍沿用既有控制终止行为，本改动不新增运动或停机协议。现场需重新验证三模式采集、联锁与性能。
+
+保存兼容专项验证：`python tests/run_saving_tests.py`；全套验证：`python -m unittest discover -s tests -v`。修改前既有 `test_clean_mode_moves_x_to_max_only_after_all_station_data_is_empty` 已失败（1150 != 900），与保存功能无关，保留待独立处理。源码与 Cython 检查不等于现场设备测试或 EXE 完整打包。
+
 ## 目录
 
 1. [系统概述](#1-系统概述)
@@ -105,7 +139,12 @@ lidar_acquisition = LidarAcquisitionProcess(
     viz_queue=viz_queue,
     lidar_config=lidar_config,
     config_dir=toml_path,
-    strategy_name="frame_by_frame"   # ← 修改此处
+    strategy_name="frame_by_frame",  # ← 修改此处；主界面已创建 save_service
+    save_pool_descriptor=save_service.pool.descriptor,
+    save_task_queue=save_service.task_queue,
+    save_ack_queue=save_service.ack_queue,
+    save_status_queue=save_service.status_queue,
+    stop_event=save_service.stop_event,
 )
 ```
 
@@ -137,7 +176,13 @@ lidar_config = {
 
 pulse_queue     = multiprocessing.Queue()
 raw_data_queue  = multiprocessing.Queue()
-viz_queue       = multiprocessing.Queue()
+viz_queue       = multiprocessing.Queue(maxsize=2)
+
+from model.utils.PointCloudSaveService import PointCloudSaveService
+from model.utils.TomlLoader import TomlLoader
+save_service = PointCloudSaveService(
+    TomlLoader.load(toml_path + "\\ReadDataConfig.toml"), "data/points", viz_queue)
+save_service.start()  # 在父进程启动，与采集同级；不在采集 daemon 中创建子进程
 
 # 1. 启动激光采集进程
 lidar_acquisition = LidarAcquisitionProcess(
@@ -147,6 +192,11 @@ lidar_acquisition = LidarAcquisitionProcess(
     lidar_config=lidar_config,
     config_dir=toml_path,
     strategy_name="frame_by_frame",   # ← 选择策略
+    save_pool_descriptor=save_service.pool.descriptor,
+    save_task_queue=save_service.task_queue,
+    save_ack_queue=save_service.ack_queue,
+    save_status_queue=save_service.status_queue,
+    stop_event=save_service.stop_event,
 )
 lidar_acquisition.daemon = True
 lidar_acquisition.start()
@@ -159,6 +209,12 @@ plc_handler = PlcCommunicationProcess.create(
 )
 plc_handler.daemon = True
 plc_handler.start()
+
+# Windows spawn 的这些启动调用需放在 if __name__ == "__main__" 下。
+# 关闭时（实际界面会后台调用）：
+from model.utils.PointCloudSaveService import stop_pipeline
+stop_pipeline([lidar_acquisition, plc_handler, save_service.worker],
+              lidar_acquisition, save_service)
 ```
 
 ---
@@ -422,13 +478,13 @@ translate_data_origin = 2  # 1=统一原点（同一坐标系），2=各自原�
 
 ```toml
 queue_size      = 1500  # 工件数据队列长度
-threadpool_size = 3     # 数据保存线程池大小
+threadpool_size = 3     # 旧配置兼容；三种模式保存不再使用线程池
 ```
 
 | 参数              | 类型  | 说明                                    |
 |-------------------|-------|-----------------------------------------|
 | `queue_size`      | `int` | 工件数据队列堆栈数量                    |
-| `threadpool_size` | `int` | 异步数据保存线程池大小                  |
+| `threadpool_size` | `int` | 旧配置兼容保留；保存已移至独立进程          |
 
 ---
 

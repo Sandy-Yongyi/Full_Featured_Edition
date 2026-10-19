@@ -3,9 +3,9 @@ import glob
 from model.utils.LoggerUtil import logger
 
 
-def manage_points_files(max_files=1000):
+def manage_points_files(max_files=1000, directory=None):
     # 设置目标目录
-    points_directory = os.path.join(os.getcwd() + '\\data\\points')
+    points_directory = directory or os.path.join(os.getcwd(), 'data', 'points')
 
     # 创建目录（如果不存在）
     if not os.path.exists(points_directory):
@@ -17,7 +17,7 @@ def manage_points_files(max_files=1000):
     all_files = glob.glob(os.path.join(points_directory, '*'))
 
     # 仅保留文件（排除目录）
-    files = [f for f in all_files if os.path.isfile(f)]
+    files = [f for f in all_files if os.path.isfile(f) and not f.endswith('.part')]
 
     # 检查文件数量
     if len(files) <= max_files:

@@ -5,6 +5,7 @@ import queue
 import time
 import numpy as np
 import multiprocessing
+import threading
 from control.DataProcessWorker import DataProcessWorker
 from view.MainFrame import MainFrame
 from model.utils.TomlLoader import TomlLoader
@@ -18,6 +19,7 @@ from model.utils.PasswordConfig import is_password_required
 from control.LidarAcquisitionProcess import LidarAcquisitionProcess
 from control.PlcCommunicationProcess import PlcCommunicationProcess
 from model.utils.LoggerUtil import logger, manage_log_files, log_directory
+from model.utils.PointCloudSaveService import PointCloudSaveService, stop_pipeline
 
 
 class RedirectText:
@@ -51,6 +53,10 @@ class MainFrameController(MainFrame):
         super().__init__(parent)
 
         self.running = False
+        self.stopping = False
+        self._close_pending = False
+        self.save_service = None
+        self.lidar_acquisition = None
         self.processes = []
         self.filter = DataFilter()
         self.log_queue = multiprocessing.Queue()  # 用于收集子进程输出
@@ -184,7 +190,17 @@ class MainFrameController(MainFrame):
         self.process_heartbeats[process] = heartbeat
 
     def on_start(self, event):
-        if self.running:
+        try:
+            self._start_pipeline(event)
+        except Exception as exc:
+            logger.exception("Pipeline startup failed")
+            self.on_stop(None)
+            wx.MessageBox(self._text(f"启动失败，正在清理已启动进程：{exc}",
+                                     f"Startup failed; stopping workers: {exc}"),
+                          self._text("启动失败", "Startup Error"), wx.OK | wx.ICON_ERROR)
+
+    def _start_pipeline(self, event):
+        if self.running or self.stopping:
             print(self._text("系统已在运行中", "The system is already running."))
             return
 
@@ -216,7 +232,7 @@ class MainFrameController(MainFrame):
             # 创建进程通信队列
             raw_data_queue = multiprocessing.Queue()
             pulse_queue = multiprocessing.Queue()
-            viz_queue = multiprocessing.Queue()
+            viz_queue = multiprocessing.Queue(maxsize=2)
             machine_data_queue = None
 
             # 启动调试数据导入进程：直接按 frame_by_frame 方式向 PLC 通讯进程提供帧数据
@@ -276,13 +292,18 @@ class MainFrameController(MainFrame):
             # 创建进程通信队列
             pulse_queue = multiprocessing.Queue()
             raw_data_queue = multiprocessing.Queue()
-            viz_queue = multiprocessing.Queue()
+            viz_queue = multiprocessing.Queue(maxsize=2)
 
             # 激光雷达配置结构
             lidar_config = get_active_lidar_config(self.sys_config)
 
             lidar_acquisition = None
             if spray_mode == 0:
+                self.save_service = PointCloudSaveService.from_config_file(
+                    os.path.join(self.toml_path, "ReadDataConfig.toml"),
+                    os.path.join(os.getcwd(), "data", "points"), viz_queue)
+                self.save_service.start()
+                self._register_process(self.save_service.worker, self.save_service.heartbeat)
                 t0 = time.perf_counter()
                 lidar_heartbeat = self._new_process_heartbeat()
                 lidar_acquisition = LidarAcquisitionProcess(pulse_queue=pulse_queue,
@@ -292,7 +313,12 @@ class MainFrameController(MainFrame):
                                                             config_dir=self.toml_path,
                                                             strategy_name=strategy_name,
                                                             heartbeat=lidar_heartbeat,
-                                                            heartbeat_interval_s=self.process_heartbeat_interval_s)
+                                                            heartbeat_interval_s=self.process_heartbeat_interval_s,
+                                                            save_pool_descriptor=self.save_service.pool.descriptor,
+                                                            save_task_queue=self.save_service.task_queue,
+                                                            save_ack_queue=self.save_service.ack_queue,
+                                                            save_status_queue=self.save_service.status_queue,
+                                                            stop_event=self.save_service.stop_event)
                 logger.info(f"create lidar_acquisition object took {time.perf_counter() - t0:.3f}s")
                 lidar_acquisition.daemon = True
                 # 重定向激光采集进程输出
@@ -300,6 +326,7 @@ class MainFrameController(MainFrame):
                 lidar_acquisition.stderr = SubprocessRedirect(self.log_queue, is_stderr=True)
                 t1 = time.perf_counter()
                 lidar_acquisition.start()
+                self.lidar_acquisition = lidar_acquisition
                 logger.info(f"lidar_acquisition.start() returned in {time.perf_counter() - t1:.3f}s")
                 self._register_process(lidar_acquisition, lidar_heartbeat)
                 logger.info(f"start lidar_acquisition process ID: {lidar_acquisition.pid}")
@@ -397,6 +424,13 @@ class MainFrameController(MainFrame):
         if not self.running or self._process_fault_handled:
             return
 
+        if self.save_service is not None:
+            for message in self.save_service.poll_status():
+                if message.get("type") == "error":
+                    self._handle_process_fault(self._text("点云保存故障", "Point Cloud Save Error"),
+                                               message.get("message", "Unknown save error"))
+                    return
+
         dead_processes = [process for process in self.processes if not process.is_alive()]
         if dead_processes:
             dead_names = ", ".join(type(process).__name__ for process in dead_processes)
@@ -420,12 +454,12 @@ class MainFrameController(MainFrame):
             return
         self._process_fault_handled = True
         message = self._text(
-            f"{title}：{detail}。系统已主动停机，请检查激光/PLC连接、日志和硬件状态后重新启动。",
-            f"{title}: {detail}. System stopped. Check lidar/PLC connections, logs and hardware before restarting.",
+            f"{title}：{detail}。正在停止采集与控制并处理待保存点云，请检查日志和硬件状态。",
+            f"{title}: {detail}. Stopping acquisition/control and draining point clouds. Check logs and hardware.",
         )
         logger.error(message)
         self.status_text.AppendText(f"\n\n--- {title} ---\n{detail}\n")
-        self.status_text.AppendText(self._text("系统已主动停机，避免链条继续运动导致数据错位或撞枪\n", "System stopped to prevent unintended motion.\n"))
+        self.status_text.AppendText(self._text("正在停止采集与控制并处理待保存点云\n", "Stopping acquisition/control and draining point clouds.\n"))
         self.status_text.AppendText(self._text("请检查激光/PLC连接、日志和硬件状态后重新启动系统\n", "Check lidar/PLC connections, logs and hardware before restarting.\n"))
         self.on_stop(None)
         wx.MessageBox(message, self._text("子进程异常", "Worker Process Error"), wx.OK | wx.ICON_ERROR)
@@ -433,13 +467,13 @@ class MainFrameController(MainFrame):
     def update_visualization(self, viz_queue):
         """从队列获取点云数据并更新GL画布"""
         try:
-            while not viz_queue.empty():
+            while True:
                 data = viz_queue.get_nowait()
                 if "points" in data:
                     points = data["points"]
-                    if points.shape[0] > 200000:
-                        print(self._text(f"点数 {points.shape[0]} 超过阈值，进行降采样...", f"Point count {points.shape[0]} exceeds the display limit; downsampling..."))
-                        points = self.filter.voxelReductionFilter(points, voxel_size=10.0)
+                    voxel_mm = float(self.read_data_config.get("point_cloud_preview_voxel_mm", 10))
+                    if not data.get("preview_processed", False) and voxel_mm > 0:
+                        points = self.filter.voxelReductionFilter(points, voxel_size=voxel_mm)
                     wx.CallAfter(self.gl_canvas.set_points, points)
                 # 如果有方框数据，设置方框
                 if "boxes" in data:
@@ -452,51 +486,76 @@ class MainFrameController(MainFrame):
             pass
 
     def on_stop(self, event):
-        if not self.running:
+        if not self.running or self.stopping:
             return
-
-        print(self._text("停止系统...", "Stopping system..."))
+        print(self._text("停止采集与控制，等待点云保存完成...", "Stopping acquisition/control; waiting for point clouds to finish saving..."))
         self.running = False
+        self.stopping = True
+        self.start_btn.Enable(False)
+        self.stop_btn.Enable(False)
+        self._set_param_buttons_enabled(False)
+        self.save_setting_btn.Enable(False)
+        self.chain_speed_text.Enable(False)
+        if self.save_service is not None:
+            self.save_service.stop_event.set()
+        for timer_name in ("viz_timer", "proc_timer"):
+            timer = getattr(self, timer_name, None)
+            if timer is not None:
+                timer.Stop()
+        processes = list(self.processes)
+        service = self.save_service
+        acquisition = self.lidar_acquisition
 
-        # 先通知全部子进程停止，再逐个有界等待，避免主界面卡在join()。
-        for process in self.processes:
-            if process.is_alive():
-                try:
-                    process.terminate()
-                except Exception as e:
-                    logger.error(f"Failed to terminate {type(process).__name__}: {str(e)}")
-
-        for process in self.processes:
+        def finish_workers():
             try:
-                process.join(timeout=2.0)
-                if process.is_alive() and hasattr(process, "kill"):
-                    logger.error(f"{type(process).__name__} did not exit after terminate, forcing kill")
-                    process.kill()
-                    process.join(timeout=1.0)
-            except Exception as e:
-                logger.error(f"Failed to stop {type(process).__name__}: {str(e)}")
+                errors = stop_pipeline(
+                    processes, acquisition, service,
+                    float(self.read_data_config.get("point_cloud_acquisition_stop_timeout_s", 15)),
+                    float(self.read_data_config.get("point_cloud_save_shutdown_timeout_s", 120)))
+            except Exception as exc:
+                logger.exception("Pipeline shutdown failed")
+                errors = [str(exc)]
+            wx.CallAfter(self._finish_stop, errors)
+
+        threading.Thread(target=finish_workers, name="PointCloudShutdown", daemon=False).start()
+
+    def _finish_stop(self, errors):
+        if any(process.is_alive() for process in self.processes):
+            self.status_text.AppendText(self._text("部分进程未退出，禁止重新启动；共享内存保留。\n", "Some workers have not exited; restart is disabled and shared memory is retained.\n"))
+            wx.MessageBox(self._text("部分进程无法停止，请检查日志。", "Some workers could not stop; check logs."), self._text("停止失败", "Stop Error"), wx.OK | wx.ICON_ERROR)
+            return
         self.processes = []
         self.process_heartbeats = {}
-
-        # 停止定时器
-        if hasattr(self, "viz_timer"):
-            self.viz_timer.Stop()
+        self.save_service = None
+        self.lidar_acquisition = None
+        self.stopping = False
         if hasattr(self, "log_timer"):
             self.log_timer.Stop()
-        if hasattr(self, "proc_timer"):
-            self.proc_timer.Stop()
-
-        # 清空画布
-        wx.CallAfter(self.gl_canvas.set_points, np.empty((0, 3)))
+        self.gl_canvas.set_points(np.empty((0, 3)))
         self.on_program_stopped()
+        self.chain_speed_text.Enable(is_continuous_bidirectional_mode(self.strategy_name))
+        self.save_setting_btn.Enable(is_continuous_bidirectional_mode(self.strategy_name))
+        if errors:
+            detail = "\n".join(errors)
+            logger.error(f"Shutdown with incomplete point clouds: {detail}")
+            wx.MessageBox(self._text(f"停止完成，但部分点云可能不完整：\n{detail}", f"Stopped, but some point clouds may be incomplete:\n{detail}"), self._text("保存提示", "Save Warning"), wx.OK | wx.ICON_WARNING)
+        else:
+            self.status_text.AppendText(self._text("停止完成，已提交的点云保存任务已排空。\n", "Stopped; all submitted point cloud jobs have drained.\n"))
+        if self._close_pending:
+            self.Destroy()
 
     def on_close(self, event):
-        if event is not None:
-            if not self._verify_button_password():
+        # Keep the full edition's password gate for a user-requested close.
+        if event is not None and not self._verify_button_password():
+            if event.CanVeto():
                 event.Veto()
-                return
-
-        self.on_stop(None)
+            return
+        if self.running or self.stopping:
+            self._close_pending = True
+            if event is not None and event.CanVeto():
+                event.Veto()
+            self.on_stop(None)
+            return
         self.Destroy()
 
 

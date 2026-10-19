@@ -76,7 +76,7 @@ class ContinuousBidirectionalStrategy(AcquisitionStrategy):
         tolerance = proc.scan_position_tolerance
         proc.continuous_scan_invalid = False
         proc.continuous_last_saved_pulse = None
-        while not proc.shutdown_flag:
+        while not proc._stop_requested():
             proc._heartbeat.touch()
             pulse, _, status = proc._update_pulse_data()
             if getattr(proc, "continuous_wait_for_idle", False):
@@ -129,7 +129,7 @@ class ContinuousBidirectionalStrategy(AcquisitionStrategy):
                 break
             proc._heartbeat.sleep(0.01)
 
-        if proc.continuous_scan_invalid or proc.shutdown_flag:
+        if proc.continuous_scan_invalid or proc._stop_requested():
             proc.continuous_scan_invalid = True
             proc.continuous_wait_for_idle = True
             # 异常中断不得将残缺点云保存或交付为完整工件。
@@ -196,7 +196,7 @@ class FrameByFrameStrategy(AcquisitionStrategy):
         logger.info("Waiting for forward movement to start...")
 
         while True:
-            if proc.shutdown_flag:
+            if proc._stop_requested():
                 break
             _, _, status = proc._update_pulse_data()
 
@@ -224,6 +224,9 @@ class FrameByFrameStrategy(AcquisitionStrategy):
                     proc.finish_test = False
                     proc.movement_detected = False
                     proc.all_xyz_data = np.empty((0, 3))
+                    proc._processing_chunks = {}
+                    if proc.save_buffer is not None:
+                        proc.save_buffer.release_unsaved()
                     for state in proc.direction_states.values():
                         state.reset()
                     continue
@@ -327,7 +330,7 @@ class CompleteWorkpieceStrategy(AcquisitionStrategy):
         logger.info("Waiting for forward movement to start...")
         last_status = "stopped"
         while True:
-            if proc.shutdown_flag:
+            if proc._stop_requested():
                 break
             _, _, status = proc._update_pulse_data()
 

@@ -6,6 +6,9 @@ from Cython.Build import cythonize
 extensions = [
     Extension("control.LidarAcquisitionProcess", ["control/LidarAcquisitionProcess.py"]),
     Extension("control.LidarAcquisitionStrategies", ["control/LidarAcquisitionStrategies.py"]),
+    Extension("control.PointCloudSaveProcess", ["control/PointCloudSaveProcess.py"]),
+    Extension("model.utils.PointCloudSaveBuffer", ["model/utils/PointCloudSaveBuffer.py"]),
+    Extension("model.utils.PointCloudSaveService", ["model/utils/PointCloudSaveService.py"]),
     Extension("model.dataprocess.DataFilter", ["model/dataprocess/DataFilter.py"]),
     Extension("model.dataprocess.DataSplitting", ["model/dataprocess/DataSplitting.py"]),
     Extension("model.dataprocess.complete_workpiece.DataFindBlocks", ["model/dataprocess/complete_workpiece/DataFindBlocks.py"]),

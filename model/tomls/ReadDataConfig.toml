@@ -98,7 +98,15 @@ process_unresponsive_timeout_s = 60       # 主进程判定子进程无响应的
 # -----------------------------------------------------------------------------
 translate_data_origin = 2                # 1=各激光使用同一原点，2=各自使用独立原点
 draw_type = 2                            # 1=点云，2=线框，3=点云+线框
-threadpool_size = 3                      # 点云处理与保存线程池大小
+threadpool_size = 3                      # 旧配置兼容保留，三种模式点云保存均不再使用线程池
+
+### 独立点云保存（三种采集策略共用） ###
+point_cloud_save_block_mb = 16           # 每个共享内存块大小（MiB）
+point_cloud_save_block_count = 32         # 默认总容量约512 MiB，需覆盖最大工件及保存积压
+point_cloud_save_format = "txt"          # txt 保留 %.1f；npy 保留处理后的 float64 数值精度
+point_cloud_preview_voxel_mm = 10         # 仅影响可视化；0=显示全部点，不设置固定点数上限
+point_cloud_acquisition_stop_timeout_s = 15  # 等待采集封存并退出的最长秒数
+point_cloud_save_shutdown_timeout_s = 120   # 等待保存排空的最长秒数，超时报警
 
 
 # =============================================================================
