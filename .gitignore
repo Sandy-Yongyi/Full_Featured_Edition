@@ -147,6 +147,7 @@ result.json
 # PowerPoint build caches and validation artifacts
 .ppt_build/
 .codex-finalizer/
+.superpowers/
 
 #sonar
 sonar-project.properties
