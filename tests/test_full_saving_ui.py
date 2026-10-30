@@ -1,5 +1,6 @@
-"""Exercise close/preview routing without creating a window or commanding hardware."""
+"""Exercise Qt close/preview routing without commanding hardware."""
 
+import os
 import queue
 from types import SimpleNamespace
 import unittest
@@ -7,54 +8,56 @@ from unittest.mock import patch
 
 import numpy as np
 
-from control.MainFrameControl import MainFrameController
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from control.ControlCenter import ControlCenter
+from control.RuntimeStateCollector import RuntimeStateCollector
+from view.qt.main_window import IndustrialMainWindow
 
 
 class FullEditionUiTests(unittest.TestCase):
-    def event(self):
-        event = SimpleNamespace(vetoed=False)
-        event.CanVeto = lambda: True
-        event.Veto = lambda: setattr(event, "vetoed", True)
-        return event
+    @classmethod
+    def setUpClass(cls):
+        from PyQt6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
 
     def test_close_keeps_password_gate(self):
-        destroyed = []
-        controller = SimpleNamespace(_verify_button_password=lambda: False,
-                                     Destroy=lambda: destroyed.append(True))
-        event = self.event()
-        MainFrameController.on_close(controller, event)
-        self.assertTrue(event.vetoed)
-        self.assertEqual(destroyed, [])
+        from PyQt6.QtGui import QCloseEvent
+        window = IndustrialMainWindow(SimpleNamespace())
+        event = QCloseEvent()
+        with patch("view.qt.main_window.authorize", return_value=False):
+            window.closeEvent(event)
+        self.assertFalse(event.isAccepted())
+        self.assertFalse(window._close_pending)
 
     def test_authorized_close_waits_for_saving_before_destroy(self):
-        stopped, destroyed = [], []
-        controller = SimpleNamespace(_verify_button_password=lambda: True, running=True,
-                                     stopping=False, _close_pending=False,
-                                     on_stop=lambda event: stopped.append(True),
-                                     Destroy=lambda: destroyed.append(True))
-        event = self.event()
-        MainFrameController.on_close(controller, event)
-        self.assertTrue(event.vetoed)
-        self.assertTrue(controller._close_pending)
+        from PyQt6.QtGui import QCloseEvent
+        from control.UiState import UiState
+        stopped = []
+        window = IndustrialMainWindow(SimpleNamespace(stop=lambda: stopped.append(True)))
+        window.apply_state(UiState(strategy_name="complete_workpiece", running=True))
+        event = QCloseEvent()
+        with patch("view.qt.main_window.authorize", return_value=True):
+            window.closeEvent(event)
+        self.assertFalse(event.isAccepted())
+        self.assertTrue(window._close_pending)
         self.assertEqual(stopped, [True])
-        self.assertEqual(destroyed, [])
 
     def test_saved_preview_is_not_downsampled_twice_and_preserves_boxes(self):
-        displayed = []
         cloud = np.zeros((210001, 3))
         boxes = object()
-        controller = SimpleNamespace(
-            read_data_config={"point_cloud_preview_voxel_mm": 10},
-            gl_canvas=SimpleNamespace(set_points=lambda points: displayed.append(points),
-                                      set_boxes=lambda value: displayed.append(value)),
-            filter=SimpleNamespace(voxelReductionFilter=lambda *args, **kwargs: self.fail("preview processed twice")))
         messages = queue.Queue()
         messages.put({"points": cloud, "boxes": boxes, "preview_processed": True})
-        with patch("control.MainFrameControl.wx.CallAfter", side_effect=lambda func, *args: func(*args)):
-            MainFrameController.update_visualization(controller, messages)
-        self.assertIs(displayed[0], cloud)
-        self.assertEqual(len(displayed[0]), 210001)
-        self.assertIs(displayed[1], boxes)
+        collector = RuntimeStateCollector(queue.Queue(), SimpleNamespace(
+            voxelReductionFilter=lambda *args, **kwargs: self.fail("preview processed twice")))
+        collector.set_visualization_queue(messages)
+        center = ControlCenter(SimpleNamespace(poll=collector.poll, start_pipeline=lambda: None, stop_pipeline=lambda: []), "complete_workpiece")
+        center.poll_once()
+        window = IndustrialMainWindow(center)
+        window.apply_state(center.build_ui_state())
+        self.assertIs(center.build_ui_state().points, cloud)
+        self.assertEqual(len(window.realtime_page.point_cloud_view.points), 210001)
+        self.assertIs(window.realtime_page.point_cloud_view.boxes_data, boxes)
 
 
 if __name__ == "__main__":

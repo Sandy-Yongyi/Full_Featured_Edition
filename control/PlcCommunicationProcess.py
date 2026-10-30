@@ -19,6 +19,9 @@ from model.utils.StrategyUtil import is_complete_workpiece_mode, is_continuous_b
 from model.utils.MachineConfigUtil import MACHINE_OFFSET_KEYS, get_machine_config_path, normalize_machine_config_offsets, normalize_machine_offset_values
 from model.motionplan.MotionCompleteWorkpiecePlanning import MotionCompleteWorkpiecePlanning
 from model.utils.ProcessHeartbeat import ProcessHeartbeat
+from model.utils.UiTelemetry import UiStatusPublisher
+from model.utils.UiTaskFeedback import build_task_feedback
+from control.UiState import TaskState
 from model.motionplan.ContinuousLidarScan import ContinuousLidarScan
 from model.motionplan.MotionContinuousBidirectionalPlanning import MotionContinuousBidirectionalPlanning
 
@@ -46,6 +49,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
         self.machine_data_queue = machine_data_queue  # 用于 complete_workpiece 模式
         self.strategy_name = validate_strategy_name(strategy_name)
         self._heartbeat = ProcessHeartbeat(heartbeat, heartbeat_interval_s)
+        self.ui_status = UiStatusPublisher(None, "plc")
 
         self.config_dir = os.path.join(os.getcwd(), "model", "tomls")
         self.plc_config_path = os.path.join(self.config_dir, "PlcConfig.toml")
@@ -376,6 +380,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
                     self.plc_data = self.plc.scan(self.connection_type)
                 logger.info(f"continuous_bidirectional_mode: Status={self.plc_data.Status}, Operate={self.plc_data.Operate}, "
                             f"HeartBeat={self.plc_data.HeartBeat}, AxisList={self.plc_data.AxisList}")
+                self._publish_ui_status(connected=True)
                 return True
 
             # 模拟模式处理逻辑
@@ -408,6 +413,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
                 # # 处理脉冲和定位数据
                 # self.pulse_queue.put({'pulse': self.plc_data.ChainPulse, 'fifo': self.plc_data.ChainCountCM})
 
+            self._publish_ui_status(connected=True)
             return True
 
         except (ConnectionResetError, BrokenPipeError, OSError) as e:
@@ -426,7 +432,28 @@ class PlcCommunicationProcess(multiprocessing.Process):
         except Exception as e:
             # 处理其他异常
             logger.error(f"Unexpected error: {str(e)}")
+            self._publish_ui_status(connected=False, force=True)
             return False
+
+    def _publish_ui_status(self, connected: bool, force: bool = False):
+        publisher = getattr(self, "ui_status", None)
+        if publisher is None or not publisher.is_due(force):
+            return
+        data = getattr(self, "plc_data", None)
+        try:
+            task = build_task_feedback(self) if connected else TaskState(stage="等待 PLC 通讯恢复")
+        except Exception:
+            # Optional display feedback must not interrupt the control cycle.
+            task = TaskState(stage="分枪计划暂不可用")
+        publisher.publish(
+            force=force, connected=connected and not self.simulation_mode,
+            simulated=self.simulation_mode,
+            task=task,
+            pulse=int(getattr(data, "ChainPulse", 0) or 0),
+            motion=(getattr(self.continuous_scan, "motion_status", "stopped")
+                    if is_continuous_bidirectional_mode(self.strategy_name) and hasattr(self, "continuous_scan")
+                    else self.chain_motion_status),
+        )
 
     def _advance_simulated_pulse(self, current_pulse, pulse_step):
         """仿真脉冲：递增到 max_pulse 时重置为 0。"""
@@ -999,6 +1026,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
         """立即暂停链条相关计时，并通知激光进程 PLC 已断连。"""
         self.plc_connected = False
         self.chain_motion_status = "stopped"
+        self._publish_ui_status(connected=False, force=True)
         self.raw_data_timeout_active = False
         self.pulse_history.clear()
         if not self.plc_reconnect_pending:

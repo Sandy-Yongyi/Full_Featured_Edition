@@ -1,11 +1,19 @@
 import os
-import wx
 import sys
 import ctypes
 import multiprocessing
-from model.utils.LoggerUtil import logger
-from control.MainFrameControl import MainApp
-from model.utils.TomlLoader import TomlLoader
+from app_bootstrap import prepare_environment
+
+
+# 开发调试只需修改这里，然后直接运行 main.py；交付时保持 CONTROL_TYPE = 2。
+CONTROL_TYPE = 1  # 1=TXT显示并联调PLC，2=实时采数与运动，3=只导入TXT画图
+DATA_PATH = r"D:\draw_points\ZJYMS"  # TXT文件或目录；仅方式1/3使用
+DATA_NAME = "combined_20260620_110503.txt"  # 目录内的数据集名称，例如 "sample.txt"；None为自动查找
+
+
+def qt_main():
+    from qt_main import main as run_qt
+    return run_qt(control_type=CONTROL_TYPE, data_path=DATA_PATH, data_name=DATA_NAME)
 
 
 def is_already_running():
@@ -20,6 +28,7 @@ def is_already_running():
         # 如果错误码是183（已存在），则返回True
         return last_error == 183  # ERROR_ALREADY_EXISTS
     except Exception as e:
+        from model.utils.LoggerUtil import logger
         logger.error(f"检查单实例出错: {str(e)}")
         return True
 
@@ -42,6 +51,10 @@ def disable_console_interaction():
 
 
 def main():
+    prepare_environment()
+    from model.utils.LoggerUtil import logger
+    from model.utils.TomlLoader import TomlLoader
+
     logger.info(f"main process ID: {os.getpid()}")
 
     if is_already_running():
@@ -55,27 +68,20 @@ def main():
         logger.error("检测到已有实例运行，退出程序")
         sys.exit(1)  # 非零退出码表示异常退出
 
-    # 创建GUI应用
-    app = MainApp()
-    # 获取屏幕尺寸并设置窗口大小为屏幕尺寸
-    screen = wx.Display().GetGeometry()
-    app.TopWindow.SetSize(screen.GetSize())
-    app.MainLoop()
+    return qt_main()
 
-    # 调试激光---------------------------------------------------------------------
-    # lidar_processor = LidarControl(
-    #     config_path=os.path.join(os.getcwd() + "\\model\\tomls\\ReadDataConfig.toml"),
-    #     lidar_config_path=os.path.join(os.getcwd() + "\\model\\tomls\\LidarConfig.toml")
-    # )
-    # # lidar_processor.process_all_lidar_data()
-    # lidar_processor.process_one_lidar_data("4")
 
-    # 调试PLC----------------------------------------------------------------------
-    # plc_processor = PlcControl()
+def launch() -> int:
+    multiprocessing.freeze_support()
+    prepare_environment()
+    if sys.argv[1:] == ["--check-deployment"]:
+        from deployment_check import main as check_deployment
+        return check_deployment()
+    disable_console_interaction()
+    if multiprocessing.get_start_method(allow_none=True) is None:
+        multiprocessing.set_start_method('spawn')
+    return main()
 
 
 if __name__ == "__main__":
-    disable_console_interaction()
-    multiprocessing.freeze_support()
-    multiprocessing.set_start_method('spawn')
-    main()
+    raise SystemExit(launch())

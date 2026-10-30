@@ -52,8 +52,14 @@ class _FakeFrameQueueManager:
         return all(stack[index] is None for stack in self.frame_stack.values())
 
 
-def _build_proc(status=0x7F, operate=0x01, occupied=False):
+def _build_proc(status=0x7F, operate=0x01, occupied=False, x_limits=None):
     machine_config = TomlLoader.load(os.path.join(PROJECT_ROOT, "model", "tomls", "MachineConfig3.toml"))
+    # Fix only the axes asserted by cleaning tests; never edit deployment TOML.
+    if x_limits is not None:
+        for sn, limit in x_limits.items():
+            cfg = machine_config[str(sn)]
+            x_index = 2 if cfg["type"] == "xn_rotate" else 1
+            cfg["max_limit_pos"][x_index] = limit
     feedback = ReceiveMovingFrameData(Status=status, Operate=operate, HeartBeat=9)
     # Keep every X axis at its safe position, while one Y axis per device is away
     # from safe. MotionToTarget can therefore command every axis toward safe now.
@@ -126,13 +132,21 @@ class MotionContinuousBidirectionalPlanningTest(unittest.TestCase):
         clean_bit = 1 << 15
         planner = MotionContinuousBidirectionalPlanning()
 
-        ready_frame = planner.build_moving_frame(_build_proc(operate=clean_bit | 0x01, occupied=False))
+        limits = {sn: 900 for sn in range(4)}
+        ready_frame = planner.build_moving_frame(_build_proc(operate=clean_bit | 0x01, occupied=False, x_limits=limits))
         with contextlib.redirect_stdout(io.StringIO()):
-            blocked_frame = planner.build_moving_frame(_build_proc(operate=clean_bit | 0x01, occupied=True))
+            blocked_frame = planner.build_moving_frame(_build_proc(operate=clean_bit | 0x01, occupied=True, x_limits=limits))
 
         for index in (3, 5, 7, 10, 13, 16):
             self.assertEqual(ready_frame.AxisList[index].Pos, 900, index)
             self.assertEqual(blocked_frame.AxisList[index].Pos, 0, index)
+
+    def test_clean_mode_uses_each_devices_own_x_limit(self):
+        proc = _build_proc(operate=(1 << 15) | 0x01, x_limits={0: 1110, 1: 820, 2: 1230, 3: 760})
+        frame = MotionContinuousBidirectionalPlanning().build_moving_frame(proc)
+        expected = {13: 1110, 7: 1110, 3: 820, 16: 1230, 10: 1230, 5: 760}
+        for axis_index, position in expected.items():
+            self.assertEqual(position, frame.AxisList[axis_index].Pos, axis_index)
 
     def test_clean_mode_prevents_a_new_lidar_scan(self):
         proc = _build_proc(operate=(1 << 15) | 0x01)

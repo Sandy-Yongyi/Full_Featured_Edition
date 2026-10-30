@@ -1,5 +1,6 @@
 import os
 import queue
+import re
 import sys
 import time
 import numpy as np
@@ -98,18 +99,24 @@ class DataProcessWorker(multiprocessing.Process):
         logger.warning(f"Unsupported debug strategy: {self.strategy_name}")
 
     def _load_all_frames(self):
-        """按原点配置加载 frame_by_frame 调试点云并保持 Z 空帧。"""
-        datasets = self._discover_point_cloud_datasets()
-        if not datasets:
+        """准备有序数据集，每次只加载当前文件的帧，保留 Z 空帧。"""
+        self._frame_datasets = self._discover_point_cloud_datasets()
+        self._frame_dataset_index = -1
+        if not self._frame_datasets:
             logger.warning(f"No debug point cloud dataset found in: {self.data_paths}")
             return
+        self._load_next_frame_dataset()
 
-        dataset = datasets[0]
-        if len(datasets) > 1:
-            logger.info(
-                f"frame_by_frame debug selected first dataset '{dataset['name']}' "
-                f"from {len(datasets)} available datasets"
-            )
+    def _load_next_frame_dataset(self):
+        datasets = getattr(self, "_frame_datasets", ())
+        next_index = getattr(self, "_frame_dataset_index", -1) + 1
+        if next_index >= len(datasets):
+            return False
+        self._frame_dataset_index = next_index
+        dataset = datasets[next_index]
+        self.current_frame_index = 0
+        self.all_frames = {}
+        self.accum = {direction: [] for direction in self.directions}
         points_by_source = self._load_dataset_points(dataset)
 
         if self._uses_same_origin():
@@ -142,6 +149,8 @@ class DataProcessWorker(multiprocessing.Process):
             )
             + f". Max frame index: {self.max_frame_index}"
         )
+        print(f"TXT 回放：{dataset['name']}（{next_index + 1}/{len(datasets)}）")
+        return True
 
     def _uses_same_origin(self):
         return int(
@@ -175,32 +184,47 @@ class DataProcessWorker(multiprocessing.Process):
 
     def _discover_point_cloud_datasets(self):
         """按共同文件后缀把 combined/各方向点云组织成统一数据集。"""
-        if not os.path.isdir(self.data_paths):
+        directory = self.data_paths
+        selected_name = self.data_name
+        if os.path.isfile(directory):
+            if self._uses_same_origin():
+                return [{"name": os.path.basename(directory), "paths": {"combined": directory}}]
+            selected_name = os.path.basename(directory)
+            directory = os.path.dirname(os.path.abspath(directory))
+        if not os.path.isdir(directory):
             logger.warning(f"Debug point cloud directory not found: {self.data_paths}")
             return []
 
         file_names = [
             file_name
-            for file_name in os.listdir(self.data_paths)
-            if os.path.isfile(os.path.join(self.data_paths, file_name))
+            for file_name in os.listdir(directory)
+            if os.path.isfile(os.path.join(directory, file_name))
         ]
         file_lookup = {file_name.lower(): file_name for file_name in file_names}
         sources = self._get_point_cloud_sources()
 
-        if self.data_name:
-            dataset_names = [self._normalize_dataset_name(self.data_name)]
+        if selected_name:
+            dataset_names = [self._normalize_dataset_name(selected_name)]
         else:
             dataset_names = set()
             for file_name in file_names:
                 lower_file_name = file_name.lower()
                 if not lower_file_name.endswith(".txt"):
                     continue
+                matched = False
                 for source in sorted(sources, key=len, reverse=True):
                     prefix = f"{source}_"
                     if lower_file_name.startswith(prefix.lower()):
                         dataset_names.add(file_name[len(prefix):])
+                        matched = True
                         break
-            dataset_names = sorted(dataset_names)
+                if not matched and self._uses_same_origin() and not any(
+                    lower_file_name.startswith(direction + "_") for direction in self.DIRECTIONS
+                ):
+                    dataset_names.add(file_name)
+            dataset_names = sorted(dataset_names, key=lambda name: [
+                int(part) if part.isdigit() else part.casefold() for part in re.split(r"(\d+)", name)
+            ])
 
         datasets = []
         for dataset_name in dataset_names:
@@ -211,10 +235,12 @@ class DataProcessWorker(multiprocessing.Process):
                 candidates = [f"{source}_{dataset_name}"]
                 if not str(dataset_name).lower().endswith(".txt"):
                     candidates.append(f"{source}_{dataset_name}.txt")
+                if source == "combined":
+                    candidates.append(dataset_name if str(dataset_name).lower().endswith(".txt") else dataset_name + ".txt")
                 for candidate in candidates:
                     actual_name = file_lookup.get(candidate.lower())
                     if actual_name:
-                        paths[source] = os.path.join(self.data_paths, actual_name)
+                        paths[source] = os.path.join(directory, actual_name)
                         break
             if paths:
                 datasets.append({"name": dataset_name, "paths": paths})
@@ -342,6 +368,8 @@ class DataProcessWorker(multiprocessing.Process):
 
         ring_size = self.max_fifo + 1
         for step in range(1, step_count + 1):
+            while self.current_frame_index > self.max_frame_index and self._load_next_frame_dataset():
+                pass
             frame_fifo = (int(last_fifo) + step) % ring_size
             self._process_current_frame(real_fifo_key=frame_fifo, repeat_count=1)
             self.current_frame_index += 1
@@ -439,6 +467,7 @@ class DataProcessWorker(multiprocessing.Process):
                 continue
 
             self.machine_data_queue.put(raw_data)
+            print(f"TXT 工件处理：{dataset['name']}")
             logger.info(
                 f"Sent complete workpiece debug data: dataset={dataset['name']}, "
                 f"translate_data_origin={raw_data['translate_data_origin']}"

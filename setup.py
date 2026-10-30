@@ -24,7 +24,6 @@ extensions = [
     Extension("model.plc.PlcCommon", ["model/plc/PlcCommon.py"]),
     Extension("model.plc.PlcFrame", ["model/plc/PlcFrame.py"]),
     Extension("model.plot.Draw", ["model/plot/Draw.py"]),
-    Extension("model.plot.PointCloudCanvas", ["model/plot/PointCloudCanvas.py"]),
 ]
 
 setup(

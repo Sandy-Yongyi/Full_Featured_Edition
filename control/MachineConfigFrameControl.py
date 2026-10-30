@@ -138,6 +138,15 @@ def load_machine_config_for_ui(sn: int, strategy_name="frame_by_frame") -> dict:
     return _normalize_config_for_ui(cfg.get(str(sn), {}))
 
 
+def list_machine_devices(strategy_name="frame_by_frame") -> list[tuple[int, str]]:
+    config = TomlLoader.load(_get_toml_path(strategy_name))
+    return sorted(
+        (int(sn), str(values.get("type", "")))
+        for sn, values in config.items()
+        if str(sn).isdigit() and isinstance(values, dict)
+    )
+
+
 def save_machine_config_from_ui(sn: int, values: dict, control_queue=None, strategy_name="frame_by_frame"):
     """保存机器配置并通知PLC进程"""
     param_range_rules = _get_param_range_rules(sn, strategy_name)

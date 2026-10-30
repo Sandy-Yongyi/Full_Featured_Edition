@@ -32,7 +32,7 @@
 
 停止/关闭时保持密码与中英文界面，先结束采集与控制，再排空已提交保存任务，窗口继续响应；排空前禁用重新启动。PLC停止仍沿用既有控制终止行为，本改动不新增运动或停机协议。现场需重新验证三模式采集、联锁与性能。
 
-保存兼容专项验证：`python tests/run_saving_tests.py`；全套验证：`python -m unittest discover -s tests -v`。修改前既有 `test_clean_mode_moves_x_to_max_only_after_all_station_data_is_empty` 已失败（1150 != 900），与保存功能无关，保留待独立处理。源码与 Cython 检查不等于现场设备测试或 EXE 完整打包。
+保存兼容专项验证：`python tests/run_saving_tests.py`；全套验证：`python -m unittest discover -s tests -v`。清枪用例已通过固定测试限位数据修正，未改动运动算法。源码与 Cython 检查不等于现场设备测试或 EXE 完整打包。
 
 ## 目录
 
@@ -130,22 +130,18 @@
 
 ### 修改采集策略
 
-在 `control/MainFrameControl.py` 中，找到以下代码并修改 `strategy_name` 参数：
+主界面使用 PyQt6。运行 `main.py` 启动生产控制中心；运行 `qt_preview.py` 查看不连接设备的空场预览。
 
-```python
-lidar_acquisition = LidarAcquisitionProcess(
-    pulse_queue=pulse_queue,
-    raw_data_queue=raw_data_queue,
-    viz_queue=viz_queue,
-    lidar_config=lidar_config,
-    config_dir=toml_path,
-    strategy_name="frame_by_frame",  # ← 修改此处；主界面已创建 save_service
-    save_pool_descriptor=save_service.pool.descriptor,
-    save_task_queue=save_service.task_queue,
-    save_ack_queue=save_service.ack_queue,
-    save_status_queue=save_service.status_queue,
-    stop_event=save_service.stop_event,
-)
+只读部署自检：`python -B main.py --check-deployment`，不启动界面和设备进程。构建命令和产物验收见 [Qt 部署说明](docs/qt-deployment.md)。
+
+开发代码同时保留 TXT 联调与仅查看点云，修改 `main.py` 顶部的 `CONTROL_TYPE`、`DATA_PATH`、`DATA_NAME` 后直接运行即可；命令参数也可覆盖设置。正常交付保持 `CONTROL_TYPE=2`，不在操作员界面提供运行方式切换。详见 [开发运行方式](docs/qt-developer-modes.md)。
+
+“喷涂任务”页按策略显示反馈：策略 1 显示链条 FIFO、原始数据超时标记及各方向缓存槽位（含空帧）；策略 2 显示 xn_side 分枪计划和工艺阶段；策略 3 显示扫描阶段、故障原因及激光位/手补位/自动位的数据流转状态。工位的“有点云数据”表示软件数据占用，不能作为实际工件到位或开枪反馈；反馈缺失或过期时显示待反馈，完成百分比仍待实际设备数据接入。
+
+策略统一由 `model/tomls/ModeConfig.toml` 配置，修改后重启软件：
+
+```toml
+strategy_name = 1 # 1=逐帧，2=完整工件，3=连续往复
 ```
 
 可选值：
@@ -711,7 +707,7 @@ BYTE_ORDER = '<'  # 小端序
 
 ### 6.1 切换到 `frame_by_frame`（逐帧传送带）
 
-1. 修改 `MainFrameControl.py`：`strategy_name="frame_by_frame"`
+1. 修改 `model/tomls/ModeConfig.toml`：`strategy_name=1`，保存后重启软件。
 2. 配置 `ReadDataConfig.toml`：
    - 调整 `combined_y_min`、`combined_y_max` 为实际工件 Y 轴范围
    - 设置 `y_threshold`（Y 分层粒度，影响发送数据密度）
@@ -721,7 +717,7 @@ BYTE_ORDER = '<'  # 小端序
 
 ### 6.2 切换到 `continuous_bidirectional`（往返扫描）
 
-1. 修改 `MainFrameControl.py`：`strategy_name="continuous_bidirectional"`
+1. 修改 `model/tomls/ModeConfig.toml`：`strategy_name=3`，保存后重启软件。
 2. 配置 `ReadDataConfig.toml`：
    - 设置 `max_swing_pulse`（往返扫描脉冲范围）
    - 设置 `swing_threshold`（端点检测阈值）
@@ -729,7 +725,7 @@ BYTE_ORDER = '<'  # 小端序
 
 ### 6.3 切换到 `complete_workpiece`（完整工件）
 
-1. 修改 `MainFrameControl.py`：`strategy_name="complete_workpiece"`
+1. 修改 `model/tomls/ModeConfig.toml`：`strategy_name=2`，保存后重启软件。
 2. 系统自动启动 `DataProcessingProcess`（无需手动配置）
 3. 配置 `ReadDataConfig.toml`：
    - 设置 `start_skip_mm`（启动跳过距离）

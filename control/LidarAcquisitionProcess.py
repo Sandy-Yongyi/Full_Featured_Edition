@@ -21,6 +21,7 @@ from model.utils.PointCloudSaveBuffer import PointCloudSaveBuffer
 from model.utils.LidarDirectionUtil import filter_active_direction_map
 from model.utils.StrategyUtil import is_complete_workpiece_mode, is_continuous_bidirectional_mode, is_frame_by_frame_mode, validate_strategy_name
 from model.utils.ProcessHeartbeat import ProcessHeartbeat
+from model.utils.UiTelemetry import UiStatusPublisher
 from control.LidarAcquisitionStrategies import AcquisitionStrategyFactory
 
 
@@ -57,6 +58,7 @@ class LidarAcquisitionProcess(multiprocessing.Process):
         self.viz_queue = viz_queue
         self.raw_data_queue = raw_data_queue
         self._heartbeat = ProcessHeartbeat(heartbeat, heartbeat_interval_s)
+        self.ui_status = UiStatusPublisher(None, "lidar")
         self.read_data_config = TomlLoader.load(f"{config_dir}\\ReadDataConfig.toml")
         self.scan_position_tolerance = int(TomlLoader.load(f"{config_dir}\\SprayConfig.toml")["spray_pos_tolerance"])
         self.process_config = TomlLoader.load(f"{config_dir}\\ProcessConfig.toml")
@@ -443,6 +445,7 @@ class LidarAcquisitionProcess(multiprocessing.Process):
     def _handle_lidar_status_transition(self, new_status: int, source: str = ""):
         """处理激光状态切换，异常恢复后重新启用启动跳过逻辑。"""
         new_status = int(new_status or 0)
+        self._publish_ui_status(new_status)
         old_status = int(getattr(self, "last_reported_lidar_status", 0) or 0)
         self.last_reported_lidar_status = new_status
 
@@ -452,6 +455,15 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                 f"{f' ({source})' if source else ''}, rearm startup guard"
             )
             self._rearm_startup_guard_after_lidar_recovery()
+
+    def _publish_ui_status(self, status: int, force: bool = False):
+        publisher = getattr(self, "ui_status", None)
+        if publisher is None or publisher.output_queue is None:
+            return
+        publisher.publish(
+            force=force, status=int(status),
+            connected=bool(self.active_directions) and int(status) == 0 and not self.lidar_disconnected,
+        )
 
     def _connect_with_retry(self, lidar, lidar_id: str, direction: str) -> bool:
         """带重试的连接方法"""
@@ -627,6 +639,7 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                     logger.error(f"{lidar_id} Lidar poll connection error: {str(e)}")
                     polled_status = 3
                     self.lidar_disconnected = True
+                    self._publish_ui_status(3, force=True)
                     if is_continuous_bidirectional_mode(self.strategy_name):
                         self.lidar_status = 3
                         self._push_lidar_status_update()
@@ -665,6 +678,7 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                 logger.error(f"{lidar_id} Lidar Connection error: {str(e)}")
                 self.lidar_status = max(self.lidar_status, 3)
                 self.lidar_disconnected = True
+                self._publish_ui_status(3, force=True)
                 if self.movement_detected or self.any_scanning_active:
                     self._invalidate_current_workpiece(self._text(f"{direction}方向激光 {lidar_id} 连接断开", f"{direction} lidar {lidar_id} disconnected"))
                 if not self._connect_with_retry(lidar, lidar_id, direction):

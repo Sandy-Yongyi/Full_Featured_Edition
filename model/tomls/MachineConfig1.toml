@@ -152,7 +152,6 @@ in_z_front_offset = 100
 in_z_after_offset = 100
 search_front_z_offset = 100
 search_after_z_offset = 100
-top_chain_hold_enabled = true
 z_back_speed = 100
 x_pos_speed = 300
 x_recip_speed = 100

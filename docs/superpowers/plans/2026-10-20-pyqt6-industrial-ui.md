@@ -1,5 +1,7 @@
 # PyQt6 Industrial Control Center Implementation Plan
 
+> 实际进度与剩余工作见 [2026-10-28 migration status](2026-10-28-pyqt6-migration-status.md)。历史步骤中的旧文件名仅保留为设计依据；当前已使用 Qt 入口，且按用户要求不提交源代码改动。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the wxPython interface with a PyQt6 industrial control center while preserving all existing acquisition, processing, PLC, configuration, and safety behavior.

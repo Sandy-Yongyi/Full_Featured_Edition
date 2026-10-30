@@ -1,0 +1,206 @@
+{
+  "outside_shared": {
+    "origins": [
+      1550,
+      2000,
+      2400,
+      2900,
+      3350,
+      3800
+    ],
+    "scan_span": 400,
+    "guns": [
+      {
+        "gun_id": 0,
+        "gun_y_enable": 0,
+        "gun_y_upper": 0,
+        "gun_y_downer": 0,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 1,
+        "gun_y_enable": 1,
+        "gun_y_upper": 400,
+        "gun_y_downer": 0,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 2,
+        "gun_y_enable": 1,
+        "gun_y_upper": 400,
+        "gun_y_downer": 0,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 3,
+        "gun_y_enable": 1,
+        "gun_y_upper": 400,
+        "gun_y_downer": 0,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 4,
+        "gun_y_enable": 1,
+        "gun_y_upper": 400,
+        "gun_y_downer": 0,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 5,
+        "gun_y_enable": 1,
+        "gun_y_upper": 400,
+        "gun_y_downer": 0,
+        "gun_r_angle": 0
+      }
+    ]
+  },
+  "outside_independent": {
+    "origins": [
+      1550,
+      2000,
+      2400,
+      2900,
+      3350,
+      3800
+    ],
+    "scan_span": 400,
+    "guns": [
+      {
+        "gun_id": 0,
+        "gun_y_enable": 1,
+        "gun_y_upper": 1062,
+        "gun_y_downer": 649,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 1,
+        "gun_y_enable": 1,
+        "gun_y_upper": 1062,
+        "gun_y_downer": 649,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 2,
+        "gun_y_enable": 1,
+        "gun_y_upper": 1062,
+        "gun_y_downer": 649,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 3,
+        "gun_y_enable": 1,
+        "gun_y_upper": 1062,
+        "gun_y_downer": 649,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 4,
+        "gun_y_enable": 1,
+        "gun_y_upper": 1062,
+        "gun_y_downer": 649,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 5,
+        "gun_y_enable": 1,
+        "gun_y_upper": 1062,
+        "gun_y_downer": 649,
+        "gun_r_angle": 0
+      }
+    ]
+  },
+  "inside_shared": {
+    "origins": [
+      1550,
+      2000,
+      2450,
+      2900,
+      3350
+    ],
+    "scan_span": 450,
+    "guns": [
+      {
+        "gun_id": 0,
+        "gun_y_enable": 0,
+        "gun_y_upper": 0,
+        "gun_y_downer": 0,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 1,
+        "gun_y_enable": 0,
+        "gun_y_upper": 0,
+        "gun_y_downer": 0,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 2,
+        "gun_y_enable": 0,
+        "gun_y_upper": 0,
+        "gun_y_downer": 0,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 3,
+        "gun_y_enable": 1,
+        "gun_y_upper": 450,
+        "gun_y_downer": 0,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 4,
+        "gun_y_enable": 1,
+        "gun_y_upper": 450,
+        "gun_y_downer": 0,
+        "gun_r_angle": 0
+      }
+    ]
+  },
+  "inside_independent": {
+    "origins": [
+      1550,
+      2000,
+      2450,
+      2900,
+      3350
+    ],
+    "scan_span": 450,
+    "guns": [
+      {
+        "gun_id": 0,
+        "gun_y_enable": 0,
+        "gun_y_upper": 0,
+        "gun_y_downer": 0,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 1,
+        "gun_y_enable": 1,
+        "gun_y_upper": 979,
+        "gun_y_downer": 507,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 2,
+        "gun_y_enable": 1,
+        "gun_y_upper": 1001,
+        "gun_y_downer": 529,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 3,
+        "gun_y_enable": 1,
+        "gun_y_upper": 1023,
+        "gun_y_downer": 551,
+        "gun_r_angle": 0
+      },
+      {
+        "gun_id": 4,
+        "gun_y_enable": 1,
+        "gun_y_upper": 1045,
+        "gun_y_downer": 573,
+        "gun_r_angle": 0
+      }
+    ]
+  }
+}
