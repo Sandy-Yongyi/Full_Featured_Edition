@@ -11,6 +11,8 @@ max-line-length = 180
 
 # 排除特定的目录或文件
 exclude = .venv, .idea, .vscode, demo, resource, dev_test, lib
+# 构建缓存、第三方依赖和生成产物；业务源码和 tests 仍正常检查。
+extend-exclude = .ppt_build, .codex-finalizer, .superpowers, node_modules, output
 
 # 添加额外的配置（比如启用复杂度检查）
 max-complexity = 20

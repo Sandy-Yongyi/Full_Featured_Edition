@@ -142,9 +142,7 @@ class BasePlc:
         frame_size = getattr(frame, 'FRAME_SIZE', 0)
         if frame_size > 0:
             if len(payload) > frame_size:
-                logger.warning(
-                    f"Payload size ({len(payload)}) exceeds FRAME_SIZE ({frame_size}), sending without padding"
-                )
+                logger.warning(f"Payload size ({len(payload)}) exceeds FRAME_SIZE ({frame_size}), sending without padding")
             else:
                 payload = payload.ljust(frame_size, b'\x00')
         message = START + payload + END
@@ -218,8 +216,8 @@ if __name__ == "__main__":
             send_frame.Enable = receive_frame.Operate
             plc.send_frame(send_frame)
             logger.info(
-                f"Frame sent: Enable={send_frame.Enable}, Gun_Cont1={send_frame.Gun_Cont1}, "
-                f"Gun_Cont2={send_frame.Gun_Cont2}, Operate={send_frame.Operate}, "
+                f"Frame sent: Enable={send_frame.Enable}, Gun_cont1={send_frame.Gun_cont1}, "
+                f"Gun_cont2={send_frame.Gun_cont2}, Operate={send_frame.Operate}, "
                 f"AxisCount={len(send_frame.AxisList)}"
             )
 

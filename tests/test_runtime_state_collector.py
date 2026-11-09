@@ -129,4 +129,3 @@ class RuntimeStateCollectorTests(unittest.TestCase):
 
         self.assertIsNotNone(visualization["points"])
         self.assertIsNone(visualization["boxes"])
-

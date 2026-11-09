@@ -72,7 +72,7 @@ def prepare_file_preview(points, read_data_config) -> np.ndarray:
 
 
 class PointCloudFileProcess(multiprocessing.Process):
-    def __init__(self, files, viz_queue, status_queue, heartbeat, heartbeat_interval_s=1, read_data_config=None):
+    def __init__(self, files, viz_queue, status_queue, heartbeat, heartbeat_interval_s: float = 1.0, read_data_config=None):
         super().__init__(name="PointCloudFileProcess", daemon=True)
         self.files = files
         self.read_data_config = dict(read_data_config or {})

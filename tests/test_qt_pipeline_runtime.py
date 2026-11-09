@@ -17,10 +17,10 @@ class QtPipelineRuntimeTests(unittest.TestCase):
             runtime.mode_config_path = str(config_dir / "ModeConfig.toml")
             runtime.strategy_name = "complete_workpiece"
             with patch("control.DataProcessingProcess.DataProcessingProcess"), \
-                 patch("control.QtPipelineRuntime.manage_log_files"), \
-                 patch("control.QtPipelineRuntime.PointCloudSaveService.from_config_file") as create_saver, \
-                 patch("control.QtPipelineRuntime.LidarAcquisitionProcess") as create_lidar, \
-                 patch("control.QtPipelineRuntime.PlcCommunicationProcess.create") as create_plc:
+                    patch("control.QtPipelineRuntime.manage_log_files"), \
+                    patch("control.QtPipelineRuntime.PointCloudSaveService.from_config_file") as create_saver, \
+                    patch("control.QtPipelineRuntime.LidarAcquisitionProcess") as create_lidar, \
+                    patch("control.QtPipelineRuntime.PlcCommunicationProcess.create") as create_plc:
                 with self.assertRaisesRegex(ValueError, "MachineConfig2.toml"):
                     runtime.start_pipeline()
             create_saver.assert_not_called()
@@ -74,4 +74,3 @@ class QtPipelineRuntimeTests(unittest.TestCase):
 
         self.assertIsInstance(controller.is_password_required(), bool)
         self.assertFalse(controller.verify_password("definitely-not-the-password"))
-

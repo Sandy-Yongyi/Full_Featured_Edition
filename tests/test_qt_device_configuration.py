@@ -24,8 +24,7 @@ class DeviceConfigurationTests(unittest.TestCase):
             self.assertEqual(sn, page._loaded_sn)
             self.assertEqual('frame_by_frame', page._loaded_strategy)
             common = ['out_front_x_offset', 'out_after_x_offset', 'in_front_x_offset', 'in_after_x_offset']
-            tail = ['out_z_front_offset', 'out_z_after_offset', 'search_front_z_offset', 'search_after_z_offset',
-                    'x_pos_speed', 'x_recip_speed', 'y_pos_speed', 'y_recip_speed']
+            tail = ['out_z_front_offset', 'out_z_after_offset', 'search_front_z_offset', 'search_after_z_offset', 'x_pos_speed', 'x_recip_speed', 'y_pos_speed', 'y_recip_speed']
             expected = (common + ['out_up_y_offset', 'in_up_y_offset'] + tail if sn % 3 == 0 else
                         common + ['out_down_y_offset', 'in_down_y_offset'] + tail if sn % 3 == 1 else
                         ['out_front_x_offset', 'out_up_y_offset', 'out_down_y_offset', 'out_z_front_offset',
@@ -51,13 +50,12 @@ class DeviceConfigurationTests(unittest.TestCase):
     def make_page(self, preview=False, password_required=False):
         from view.qt.pages import DeviceConfigurationPage
         from control.MachineConfigSchema import PARAM_LABELS
-        controller = SimpleNamespace(strategy_name="complete_workpiece", preview_mode=preview,
-                                     is_password_required=lambda: password_required)
+        controller = SimpleNamespace(strategy_name="complete_workpiece", preview_mode=preview, is_password_required=lambda: password_required)
         config = {**dict.fromkeys(PARAM_LABELS, 100), "type": "xn_side", "spray_num": 6, "install_orietation": "left",
                   "x_pos_speed": 300, "out_front_x_offset": 100,
                   "flat": {"x_pos_speed": 200, "z_spray_position": 500}}
         with patch("control.MachineConfigFrameControl.list_machine_devices", return_value=[(1, "xn_side"), (7, "xn_side")]), \
-             patch("control.MachineConfigFrameControl.load_machine_config_for_ui", return_value=config):
+                patch("control.MachineConfigFrameControl.load_machine_config_for_ui", return_value=config):
             return DeviceConfigurationPage(controller)
 
     def test_flat_changes_and_real_device_sn_are_in_save_payload(self):
@@ -81,7 +79,6 @@ class DeviceConfigurationTests(unittest.TestCase):
         self.assertFalse(page.save_button.isEnabled())
         self.assertIn("只读", page.save_result.text())
 
-
     def test_both_tabs_persist_to_toml_and_notify_same_device(self):
         from model.utils.TomlLoader import TomlLoader
         page = self.make_page()
@@ -92,7 +89,7 @@ class DeviceConfigurationTests(unittest.TestCase):
             path = Path(directory) / "MachineConfig.toml"
             path.write_text('[1]\ntype = "xn_side"\nx_pos_speed = 300\n[1.flat]\nx_pos_speed = 200\n', encoding="utf-8")
             with patch("control.MachineConfigFrameControl._get_toml_path", return_value=str(path)), \
-                 patch("control.MachineConfigFrameControl._get_param_range_rules", return_value={}):
+                    patch("control.MachineConfigFrameControl._get_param_range_rules", return_value={}):
                 page._save_device()
             saved = TomlLoader.load(str(path))["1"]
         self.assertEqual(320, saved["x_pos_speed"])
@@ -110,7 +107,6 @@ class DeviceConfigurationTests(unittest.TestCase):
                 devices = list_machine_devices("frame_by_frame")
         self.assertEqual([(1, "out_lift"), (7, "xn_side")], devices)
 
-
     def test_reload_recovers_device_list_after_configuration_is_repaired(self):
         from view.qt.pages import DeviceConfigurationPage
         controller = SimpleNamespace(strategy_name="frame_by_frame")
@@ -121,7 +117,7 @@ class DeviceConfigurationTests(unittest.TestCase):
 
         config = {"type": "out_lift", "out_z_front_offset": 150, "out_z_after_offset": 200}
         with patch("control.MachineConfigFrameControl.list_machine_devices", return_value=[(9, "out_lift")]), \
-             patch("control.MachineConfigFrameControl.load_machine_config_for_ui", return_value=config):
+                patch("control.MachineConfigFrameControl.load_machine_config_for_ui", return_value=config):
             page._reload_devices()
         self.assertEqual(9, page.selected_device_sn)
         self.assertEqual("150", page.fields["out_z_front_offset"].text())
@@ -138,24 +134,25 @@ class DeviceConfigurationTests(unittest.TestCase):
         self.assertFalse(hasattr(page, "reload_button"))
         self.assertEqual("参数", page.tabs.tabText(0))
         with patch("control.MachineConfigFrameControl.save_machine_config_from_ui") as save, \
-             patch("view.qt.pages.authorize", return_value=False) as auth:
+                patch("view.qt.pages.authorize", return_value=False) as auth:
             page.save_button.click()
             auth.assert_called_once()
             save.assert_not_called()
         self.assertEqual("350", page.fields["x_pos_speed"].text())
         with patch("control.MachineConfigFrameControl.save_machine_config_from_ui") as save, \
-             patch("view.qt.pages.authorize", return_value=True):
+                patch("view.qt.pages.authorize", return_value=True):
             page.save_button.click()
             self.assertEqual(350, save.call_args.args[1]["x_pos_speed"])
 
     def test_shutdown_during_save_authorization_does_not_save(self):
         from control.UiState import UiState
         page = self.make_page(password_required=True)
+
         def shutdown_during_prompt(*_):
             page.apply_state(UiState(strategy_name="complete_workpiece", stopping=True))
             return True
         with patch("view.qt.pages.authorize", side_effect=shutdown_during_prompt), \
-             patch("control.MachineConfigFrameControl.save_machine_config_from_ui") as save:
+                patch("control.MachineConfigFrameControl.save_machine_config_from_ui") as save:
             page._save_device()
             save.assert_not_called()
         self.assertTrue(page.fields["x_pos_speed"].isReadOnly())

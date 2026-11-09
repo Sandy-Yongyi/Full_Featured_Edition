@@ -55,7 +55,6 @@ setup_logger()
 
 def check_and_rotate_log():
     """检查日志文件大小，超过300MB时创建新日志文件"""
-    global current_log_file
     if current_log_file and os.path.exists(current_log_file):
         file_size = os.path.getsize(current_log_file)
         if file_size > MAX_LOG_SIZE:

@@ -36,7 +36,6 @@ class TaskFeedbackTests(unittest.TestCase):
         self.assertIsNone(task.progress)
         self.assertEqual(1, len(process.frame_queue_manager.queues["left"][1]))
 
-
     def test_plc_status_message_contains_current_workpiece_plan(self):
         from control.PlcCommunicationProcess import PlcCommunicationProcess
         from model.utils.UiTelemetry import UiStatusPublisher
@@ -94,8 +93,7 @@ class TaskFeedbackTests(unittest.TestCase):
             ("retry_position", "重采定位中"), ("fault", "扫描故障"),
         ):
             with self.subTest(stage=source):
-                process = SimpleNamespace(strategy_name="continuous_bidirectional",
-                                          continuous_scan=SimpleNamespace(stage=source, error=""))
+                process = SimpleNamespace(strategy_name="continuous_bidirectional", continuous_scan=SimpleNamespace(stage=source, error=""))
                 task = build_task_feedback(process)
                 self.assertEqual(expected, task.stage)
                 self.assertIsNone(task.progress)
@@ -105,14 +103,8 @@ class TaskFeedbackTests(unittest.TestCase):
         import numpy as np
         from model.utils.UiTaskFeedback import build_task_feedback
         cloud = np.ones((4, 3))
-        manager = SimpleNamespace(
-            continuous_phases=["release", "transit", "empty"],
-            frame_stack={"left": [cloud, cloud, None], "right": [None, cloud, None]},
-        )
-        process = SimpleNamespace(
-            strategy_name="continuous_bidirectional", frame_queue_manager=manager,
-            continuous_scan=SimpleNamespace(stage="fault", error="axes out of sync"),
-        )
+        manager = SimpleNamespace(continuous_phases=["release", "transit", "empty"], frame_stack={"left": [cloud, cloud, None], "right": [None, cloud, None]},)
+        process = SimpleNamespace(strategy_name="continuous_bidirectional", frame_queue_manager=manager, continuous_scan=SimpleNamespace(stage="fault", error="axes out of sync"),)
 
         task = build_task_feedback(process)
 
@@ -136,7 +128,6 @@ class TaskFeedbackTests(unittest.TestCase):
         for name in ("激光位", "手补位", "自动位"):
             self.assertEqual("待反馈", details[name].status)
             self.assertEqual("点云占用待反馈", details[name].detail)
-
 
     def test_task_details_pass_through_plc_transport_and_expire_with_feedback(self):
         import pickle

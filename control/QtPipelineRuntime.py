@@ -52,8 +52,7 @@ class SubprocessRedirect:
 class QtPipelineRuntime:
     """Production mode 2 plus developer TXT/PLC (1) and file-view (3) modes."""
 
-    def __init__(self, config_dir: str | None = None, *, control_type: int = 2,
-                 data_path: str | None = None, data_name: str | None = None):
+    def __init__(self, config_dir: str | None = None, *, control_type: int = 2, data_path: str | None = None, data_name: str | None = None):
         if type(control_type) is not int or control_type not in (1, 2, 3):
             raise ValueError("control_type 只支持 1/2/3")
         self.control_type = control_type
@@ -68,7 +67,7 @@ class QtPipelineRuntime:
         self.strategy_name = strategy_name_from_code(self.mode_config.get("strategy_name"))
         self.chain_speed = int(self.read_data_config.get("lidar_scan_speed", 25))
         self.process_heartbeat_interval_s = float(self.read_data_config.get("process_heartbeat_interval_s", 1))
-        self.process_unresponsive_timeout_s = float(self.read_data_config.get("process_unresponsive_timeout_s", 60))
+        self.process_unresponsive_timeout_s = int(self.read_data_config.get("process_unresponsive_timeout_s", 60))
         self.control_queue = multiprocessing.Queue()
         self.log_queue = multiprocessing.Queue()
         self.ui_status_queue = multiprocessing.Queue(maxsize=32)
@@ -141,8 +140,7 @@ class QtPipelineRuntime:
             self._register(loader, heartbeat)
         elif self.control_type == 3:
             heartbeat = self._heartbeat()
-            loader = PointCloudFileProcess(files, viz_queue, self.ui_status_queue, heartbeat,
-                                           self.process_heartbeat_interval_s, read_data_config=self.read_data_config)
+            loader = PointCloudFileProcess(files, viz_queue, self.ui_status_queue, heartbeat, self.process_heartbeat_interval_s, read_data_config=self.read_data_config)
             self.running = True
             loader.start()
             self.file_loader = loader
@@ -151,9 +149,7 @@ class QtPipelineRuntime:
         else:
             self.running = True
         if self.control_type == 2 and spray_mode == 0:
-            self.save_service = PointCloudSaveService.from_config_file(
-                os.path.join(self.toml_path, "ReadDataConfig.toml"), os.path.join(os.getcwd(), "data", "points"), viz_queue,
-            )
+            self.save_service = PointCloudSaveService.from_config_file(os.path.join(self.toml_path, "ReadDataConfig.toml"), os.path.join(os.getcwd(), "data", "points"), viz_queue,)
             self.save_service.start()
             self._register(self.save_service.worker, self.save_service.heartbeat)
             heartbeat = self._heartbeat()
@@ -206,8 +202,8 @@ class QtPipelineRuntime:
             self.save_service.stop_event.set()
         errors = stop_pipeline(
             list(self.processes), self.lidar_acquisition, self.save_service,
-            float(self.read_data_config.get("point_cloud_acquisition_stop_timeout_s", 15)),
-            float(self.read_data_config.get("point_cloud_save_shutdown_timeout_s", 120)),
+            int(self.read_data_config.get("point_cloud_acquisition_stop_timeout_s", 15)),
+            int(self.read_data_config.get("point_cloud_save_shutdown_timeout_s", 120)),
         )
         if self.has_live_workers():
             return list(errors or []) + ["部分进程未退出，共享资源已保留"]
@@ -254,6 +250,7 @@ class QtPipelineRuntime:
             snapshot["alarms"] = tuple(self._faults[-10:])
             return snapshot
         now = time.monotonic()
+
         def device_feedback(source, worker):
             feedback = self._ui_feedback.get(source, {})
             alive = worker is not None and worker.is_alive()

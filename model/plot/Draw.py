@@ -145,16 +145,8 @@ class PointCloudVisualizer:
 
         # Jig数据（红色）
         for jig in boxes_data["jig_data"]:
-            center = [
-                (jig["x_max"] + jig["x_min"]) / 2,
-                (jig["y_max"] + jig["y_min"]) / 2,
-                (jig["z_end"] + jig["z_start"]) / 2
-            ]
-            extent = [
-                jig["x_max"] - jig["x_min"],
-                jig["y_max"] - jig["y_min"],
-                jig["z_end"] - jig["z_start"]
-            ]
+            center = [(jig["x_max"] + jig["x_min"]) / 2, (jig["y_max"] + jig["y_min"]) / 2, (jig["z_end"] + jig["z_start"]) / 2]
+            extent = [jig["x_max"] - jig["x_min"], jig["y_max"] - jig["y_min"], jig["z_end"] - jig["z_start"]]
             bbox = o3d.geometry.OrientedBoundingBox(center, np.eye(3), extent)
             bbox.color = (1, 0, 0)
             geometries.append(bbox)
@@ -162,32 +154,16 @@ class PointCloudVisualizer:
         # 外侧数据（蓝色）
         out = boxes_data["outside_data"]
         if out["x_max"] > -np.inf:
-            center = [
-                (out["x_max"] + out["x_min"]) / 2,
-                (out["y_max"] + out["y_min"]) / 2,
-                (out["z_max"] + out["z_min"]) / 2
-            ]
-            extent = [
-                out["x_max"] - out["x_min"],
-                out["y_max"] - out["y_min"],
-                out["z_max"] - out["z_min"]
-            ]
+            center = [(out["x_max"] + out["x_min"]) / 2, (out["y_max"] + out["y_min"]) / 2, (out["z_max"] + out["z_min"]) / 2]
+            extent = [out["x_max"] - out["x_min"], out["y_max"] - out["y_min"], out["z_max"] - out["z_min"]]
             bbox = o3d.geometry.OrientedBoundingBox(center, np.eye(3), extent)
             bbox.color = (0, 0, 1)
             geometries.append(bbox)
 
         # 内侧数据（绿色）
         for part in boxes_data["inside_data"]:
-            center = [
-                (part["x_max"] + part["x_min"]) / 2,
-                (part["y_max"] + part["y_min"]) / 2,
-                (part["z_end"] + part["z_start"]) / 2
-            ]
-            extent = [
-                part["x_max"] - part["x_min"],
-                part["y_max"] - part["y_min"],
-                part["z_end"] - part["z_start"]
-            ]
+            center = [(part["x_max"] + part["x_min"]) / 2, (part["y_max"] + part["y_min"]) / 2, (part["z_end"] + part["z_start"]) / 2]
+            extent = [part["x_max"] - part["x_min"], part["y_max"] - part["y_min"], part["z_end"] - part["z_start"]]
             bbox = o3d.geometry.OrientedBoundingBox(center, np.eye(3), extent)
             bbox.color = (0, 1, 0)
             geometries.append(bbox)
@@ -306,15 +282,13 @@ class PointCloudVisualizer:
 
             # 如果可视化线程不存在或已停止，启动新线程
             if self.visualization_thread is None or not self.visualization_thread.is_alive():
-                self.visualization_thread = threading.Thread(
-                    target=self._visualization_loop,
-                    daemon=True
-                )
+                self.visualization_thread = threading.Thread(target=self._visualization_loop, daemon=True)
                 self.visualization_thread.start()
                 logger.info("Visualization thread started")
 
     def _visualization_loop(self):
         """可视化主循环"""
+        vis = None
         try:
             logger.info("Opening visualization window")
             vis = o3d.visualization.Visualizer()  # type: ignore
@@ -361,7 +335,8 @@ class PointCloudVisualizer:
         finally:
             # 清理资源
             try:
-                vis.destroy_window()
+                if vis is not None:
+                    vis.destroy_window()
                 logger.info("Visualization window closed")
             except Exception as e:
                 logger.error(f"error destroy_window: {str(e)}")

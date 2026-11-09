@@ -89,7 +89,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
         self.last_raw_frame_time = 0.0
         self.last_raw_frame_fifo = None
         self.raw_data_timeout_active = False
-        self.raw_data_timeout_s = 0.5
+        self.raw_data_timeout_s = 10
         self.total_mm = 0.0
         self.last_workpiece_chain_mm = {}
         self.last_workpiece_chain_mm_residual = {}
@@ -239,7 +239,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
         self.fifo_unit_mm = self.read_data_config.get("fifo_unit_mm", 2)
         self.workpiece_fifo_step_mm = float(self.read_data_config.get("workpiece_fifo_step_mm", 5) or 5)
         self.max_fifo = self._resolve_max_fifo()
-        self.raw_data_timeout_s = float(self.read_data_config.get("raw_data_timeout_s", 10) or 10)
+        self.raw_data_timeout_s = int(self.read_data_config.get("raw_data_timeout_s", 10) or 10)
         self.total_mm = float(self.max_pulse) / float(self.pulse_to_mm or 1)
         self.last_raw_frame_time = time.time()
         self.last_raw_frame_fifo = None

@@ -1,0 +1,58 @@
+control\LidarAcquisitionProcess.py:751:17: E131 continuation line unaligned for hanging indent
+control\PointCloudSaveProcess.py:52:1: C901 'save_job' is too complex (22)
+control\QtPipelineRuntime.py:257:9: E306 expected 1 blank line before a nested definition, found 0
+model\motionplan\MotionXNSidePlanning.py:806:98: F821 undefined name 'inside_z_span'
+model\utils\LoggerUtil.py:58:5: F824 `global current_log_file` is unused: name is never assigned in scope
+model\utils\PointCloudSaveService.py:30:44: E128 continuation line under-indented for visual indent
+model\utils\PointCloudSaveService.py:31:44: E128 continuation line under-indented for visual indent
+qt_preview.py:44:1: E302 expected 2 blank lines, found 1
+tests\test_configuration_service.py:36:1: W391 blank line at end of file
+tests\test_control_center.py:171:1: W391 blank line at end of file
+tests\test_device_enable_control.py:41:9: F841 local variable 'app' is assigned to but never used
+tests\test_full_saving_ui.py:13:1: E402 module level import not at top of file
+tests\test_full_saving_ui.py:14:1: E402 module level import not at top of file
+tests\test_full_saving_ui.py:15:1: E402 module level import not at top of file
+tests\test_main_entrypoint.py:53:1: W391 blank line at end of file
+tests\test_motion_continuous_bidirectional_planning.py:14:1: E402 module level import not at top of file
+tests\test_motion_continuous_bidirectional_planning.py:15:1: E402 module level import not at top of file
+tests\test_motion_continuous_bidirectional_planning.py:16:1: E402 module level import not at top of file
+tests\test_motion_continuous_bidirectional_planning.py:17:1: E402 module level import not at top of file
+tests\test_motion_continuous_bidirectional_planning.py:18:1: E402 module level import not at top of file
+tests\test_motion_continuous_bidirectional_planning.py:19:1: E402 module level import not at top of file
+tests\test_motion_continuous_bidirectional_planning.py:20:1: E402 module level import not at top of file
+tests\test_point_cloud_saving.py:47:70: E128 continuation line under-indented for visual indent
+tests\test_point_cloud_saving.py:87:39: E128 continuation line under-indented for visual indent
+tests\test_point_cloud_saving.py:155:39: E128 continuation line under-indented for visual indent
+tests\test_point_cloud_saving.py:166:44: E128 continuation line under-indented for visual indent
+tests\test_point_cloud_saving.py:181:39: E128 continuation line under-indented for visual indent
+tests\test_process_health_monitor.py:56:1: W391 blank line at end of file
+tests\test_qt_developer_modes.py:46:9: F841 local variable 'app' is assigned to but never used
+tests\test_qt_developer_modes.py:272:9: F841 local variable 'app' is assigned to but never used
+tests\test_qt_device_configuration.py:85:5: E303 too many blank lines (2)
+tests\test_qt_device_configuration.py:114:5: E303 too many blank lines (2)
+tests\test_qt_device_configuration.py:154:9: E306 expected 1 blank line before a nested definition, found 0
+tests\test_qt_observability.py:59:9: F401 'control.UiState.UiState' imported but unused
+tests\test_qt_observability.py:93:9: F401 'control.UiState.UiState' imported but unused
+tests\test_qt_observability.py:104:5: E303 too many blank lines (2)
+tests\test_qt_pipeline_runtime.py:77:1: W391 blank line at end of file
+tests\test_qt_preview.py:19:1: W391 blank line at end of file
+tests\test_qt_task_feedback.py:40:5: E303 too many blank lines (2)
+tests\test_qt_task_feedback.py:141:5: E303 too many blank lines (2)
+tests\test_qt_ui_scaling.py:13:1: W391 blank line at end of file
+tests\test_runtime_state_collector.py:132:1: W391 blank line at end of file
+tests\test_save_lifecycle.py:2:1: F401 'multiprocessing as mp' imported but unused
+tests\test_save_stress.py:5:1: F401 'queue' imported but unused
+tests\test_save_stress.py:12:1: F401 'model.utils.PointCloudSaveBuffer.SharedPointCloudPool' imported but unused
+tests\test_save_stress.py:12:1: F401 'model.utils.PointCloudSaveBuffer.SaveBufferFull' imported but unused
+tests\test_shutdown_coordinator.py:40:1: W391 blank line at end of file
+tests\test_txt_replay_sequence.py:8:1: F401 'numpy as np' imported but unused
+tests\test_txt_replay_sequence.py:42:9: E306 expected 1 blank line before a nested definition, found 0
+view\qt\box_geometry.py:8:1: E302 expected 2 blank lines, found 1
+view\qt\point_cloud_view.py:144:40: E128 continuation line under-indented for visual indent
+view\qt\point_cloud_view.py:145:40: E128 continuation line under-indented for visual indent
+view\qt\theme.py:12:1: E305 expected 2 blank lines after class or function definition, found 1
+view\qt\widgets.py:2:1: F401 'PyQt6.QtWidgets.QHBoxLayout' imported but unused
+view\qt\widgets.py:62:9: E731 do not assign a lambda expression, use a def
+model\utils\LoggerUtil.py:46:5: F841 local variable 'current_log_file' is assigned to but never used
+tests\test_motion_continuous_bidirectional_planning.py:50:38: F821 undefined name 'os'
+tests\test_motion_continuous_bidirectional_planning.py:50:51: F821 undefined name 'PROJECT_ROOT'

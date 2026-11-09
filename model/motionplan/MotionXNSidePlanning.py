@@ -214,10 +214,7 @@ class MotionXNSidePlanning:
         axis_cmds, safe_ready = self._build_safe_axes_for_z_target(target_ctx, z_target)
 
         if safe_ready and self._has_skipped_cabinet_rear_cleared(ctx):
-            logger.info(
-                f"sn:[{sn}] side skipped cabinet rear cleared at z_target={z_target}, "
-                f"next_mode={next_mode}, remove block"
-            )
+            logger.info(f"sn:[{sn}] side skipped cabinet rear cleared at z_target={z_target}, " f"next_mode={next_mode}, remove block")
             self.reset_side_motion_state(sn)
             return axis_cmds, True
         return axis_cmds, False
@@ -605,11 +602,7 @@ class MotionXNSidePlanning:
         if ctx.get("spray_mode") == "flat":
             axis_cmds, done = self._move_to_mode_safe(ctx)
         else:
-            axis_cmds, done = self.motiontotarget.move_to_origin_safe(
-                machine_cfg=ctx["machine_cfg"],
-                runtime_cfg=ctx["runtime_cfg"],
-                plc_data=ctx["plc_data"],
-            )
+            axis_cmds, done = self.motiontotarget.move_to_origin_safe(machine_cfg=ctx["machine_cfg"], runtime_cfg=ctx["runtime_cfg"], plc_data=ctx["plc_data"],)
         if axis_cmds is None:
             axis_cmds = self.motiontotarget.hold_current_position(ctx["machine_cfg"], ctx["plc_data"])
         ctx["side_machine"] = axis_cmds
@@ -684,11 +677,7 @@ class MotionXNSidePlanning:
         )
         for axis_name in machine_cfg.get("axis_type", []):
             if axis_name.startswith("y"):
-                axis_cmds[axis_name] = self._build_y_axis(
-                    machine_cfg,
-                    get_axis_safe_pos(machine_cfg, axis_name, default=0),
-                    y_speed,
-                )
+                axis_cmds[axis_name] = self._build_y_axis(machine_cfg, get_axis_safe_pos(machine_cfg, axis_name, default=0), y_speed,)
 
         ready = abs(self._get_axis_pos(machine_cfg, plc_data, "z") - int(z_target or 0)) <= self.spray_pos_tolerance
         for axis_name in machine_cfg.get("axis_type", []):
@@ -735,8 +724,7 @@ class MotionXNSidePlanning:
 
         return axis_cmds, x_ready
 
-    def _build_gun_axes(self, machine_cfg, plc_data, enabled_by_id, x_target, x_status, hold_current, x_speed=None,
-                        r_target=None, apply_r_to_all=False, status_enabled_by_id=None):
+    def _build_gun_axes(self, machine_cfg, plc_data, enabled_by_id, x_target, x_status, hold_current, x_speed=None, r_target=None, apply_r_to_all=False, status_enabled_by_id=None):
         axis_cmds = {}
         spray_num = int(machine_cfg.get("spray_num", 0) or 0)
         if x_speed is None:
@@ -803,7 +791,7 @@ class MotionXNSidePlanning:
         front_offset = int(runtime_cfg.get("in_z_front_offset", machine_cfg.get("in_z_front_offset", 0)) or 0)
         after_offset = int(runtime_cfg.get("in_z_after_offset", machine_cfg.get("in_z_after_offset", 0)) or 0)
         spray_radius = int(machine_cfg.get("spray_radius", 0) or 0)
-        return (front_offset + after_offset + 2 * spray_radius + 2 * self.spray_pos_tolerance) < inside_z_span
+        return front_offset + after_offset + 2 * spray_radius + 2 * self.spray_pos_tolerance
 
     def _log_no_enterable_inside(self, ctx, stage_name):
         sn = int(ctx["machine_cfg"].get("sn", 0) or 0)
@@ -896,10 +884,7 @@ class MotionXNSidePlanning:
         y_min_limit, y_max_limit = get_axis_position_limits(machine_cfg, "y")
         y_lower = clamp_to_limit_yx(min(y_downer), y_min_limit, y_max_limit)
         raw_y_upper = clamp_to_limit_yx(max(y_upper), y_min_limit, y_max_limit)
-        reduce_distance = 0 if runtime_cfg is None else max(
-            0,
-            int(runtime_cfg.get("recip_reduce_distance", machine_cfg.get("recip_reduce_distance", 0)) or 0),
-        )
+        reduce_distance = 0 if runtime_cfg is None else max(0, int(runtime_cfg.get("recip_reduce_distance", machine_cfg.get("recip_reduce_distance", 0)) or 0),)
         reduced_y_upper = int(raw_y_upper) - reduce_distance
         if reduced_y_upper <= y_lower:
             y_upper = y_lower
@@ -996,9 +981,7 @@ class MotionXNSidePlanning:
         return self.motion_util.has_arrived_z(self._get_compare_machine_z(ctx, machine_z), chain_z)
 
     def _has_cabinet_reached_safety_zone(self, ctx):
-        machine_z, chain_z = WorkpieceMotionHelper.get_outside_front_z_pair(
-            ctx, "out_z_front_offset", "outside_z_min"
-        )
+        machine_z, chain_z = WorkpieceMotionHelper.get_outside_front_z_pair(ctx, "out_z_front_offset", "outside_z_min")
         start_z_machine = self._get_compare_machine_z(ctx, machine_z)
         return chain_z >= start_z_machine
 
@@ -1012,13 +995,7 @@ class MotionXNSidePlanning:
         current_z = self._get_axis_pos(machine_cfg, ctx["plc_data"], "z")
         after_offset = int(runtime_cfg.get("out_z_after_offset", machine_cfg.get("out_z_after_offset", 0)) or 0)
         spray_radius = int(machine_cfg.get("spray_radius", 0) or 0)
-        clear_z_machine = (
-            int(machine_cfg.get("z_position", 0) or 0)
-            + current_z
-            + after_offset
-            + spray_radius
-            + self.spray_pos_tolerance
-        )
+        clear_z_machine = (int(machine_cfg.get("z_position", 0) or 0) + current_z + after_offset + spray_radius + self.spray_pos_tolerance)
         return rear_z_chain > clear_z_machine
 
     def _has_front_outside_x_status_arrived(self, ctx):

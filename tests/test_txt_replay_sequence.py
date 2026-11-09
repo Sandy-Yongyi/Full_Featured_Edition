@@ -5,8 +5,6 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-import numpy as np
-
 
 class TxtReplaySequenceTests(unittest.TestCase):
     def setUp(self):
@@ -25,8 +23,7 @@ class TxtReplaySequenceTests(unittest.TestCase):
         from control.DataProcessWorker import DataProcessWorker
         from model.utils.TomlLoader import TomlLoader
         TomlLoader.save({"translate_data_origin": 1 if same_origin else 2}, str(self.config / "ReadDataConfig.toml"))
-        return DataProcessWorker(queue.Queue(), queue.Queue(), queue.Queue(), str(self.root),
-                                 data_name=data_name, strategy_name=strategy, config_dir=str(self.config))
+        return DataProcessWorker(queue.Queue(), queue.Queue(), queue.Queue(), str(self.root), data_name=data_name, strategy_name=strategy, config_dir=str(self.config))
 
     def write(self, name, x):
         (self.root / name).write_text(f"{x} 100 0\n", encoding="utf-8")
@@ -39,6 +36,7 @@ class TxtReplaySequenceTests(unittest.TestCase):
         self.assertEqual(2, worker.all_frames["left"][0][0, 0])
         sent = []
         original = worker._process_current_frame
+
         def record(real_fifo_key, repeat_count):
             sent.append((real_fifo_key, worker.all_frames["left"][worker.current_frame_index][0, 0]))
             original(real_fifo_key, repeat_count)

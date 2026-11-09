@@ -29,9 +29,7 @@ class ProcessHealthMonitorTests(unittest.TestCase):
         monitor = ProcessHealthMonitor(unresponsive_timeout_s=60)
         process = _Process(alive=False)
 
-        fault = monitor.check(
-            [process], {process: _Heartbeat(90)}, _SaveService([{"type": "error", "message": "disk full"}]), now=100
-        )
+        fault = monitor.check([process], {process: _Heartbeat(90)}, _SaveService([{"type": "error", "message": "disk full"}]), now=100)
 
         self.assertEqual("save_error", fault.kind)
         self.assertEqual("disk full", fault.detail)
@@ -53,4 +51,3 @@ class ProcessHealthMonitorTests(unittest.TestCase):
 
         self.assertEqual("stale_process", fault.kind)
         self.assertIn("10.0", fault.detail)
-

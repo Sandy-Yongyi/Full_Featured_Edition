@@ -380,14 +380,7 @@ class DataFindBlocks:
                 else:
                     # 创建新组
                     group_counter += 1
-                    y_group_dict[group_counter] = {
-                        "entry_idx": entry_idx,
-                        "y_maxs": [y_max],
-                        "y_mins": [y_min],
-                        "current_ymax": y_max,
-                        "current_ymin": y_min,
-                        "count": 1
-                    }
+                    y_group_dict[group_counter] = {"entry_idx": entry_idx, "y_maxs": [y_max], "y_mins": [y_min], "current_ymax": y_max, "current_ymin": y_min, "count": 1}
                     group_last_row[group_counter] = row_idx
                     current_frame_groups.add(group_counter)
 
@@ -406,13 +399,7 @@ class DataFindBlocks:
             group_count = len(group_data["y_mins"])
 
             if group_count >= 5:
-                entry_groups[entry_idx].append({
-                    "group_id": group_id,
-                    "min": min(group_data["y_mins"]),
-                    "max": max(group_data["y_maxs"]),
-                    "count": group_count,
-                    "data": group_data
-                })
+                entry_groups[entry_idx].append({"group_id": group_id, "min": min(group_data["y_mins"]), "max": max(group_data["y_maxs"]), "count": group_count, "data": group_data})
                 entry_idx += 1
 
         final_groups = {}
@@ -422,11 +409,7 @@ class DataFindBlocks:
             for group in sorted_groups:
                 overlap = any(not (group["max"] < selected["min"] or group["min"] > selected["max"]) for selected in selected_groups)
                 if not overlap:
-                    selected_groups.append({
-                        "min": group["min"],
-                        "max": group["max"],
-                        "count": group["count"]
-                    })
+                    selected_groups.append({"min": group["min"], "max": group["max"], "count": group["count"]})
                     final_groups[group["group_id"]] = group["data"]
 
         return final_groups
@@ -573,12 +556,7 @@ class DataFindBlocks:
         current_y_max = part.merge_partition_y_max
         current_y_min = part.merge_partition_y_min
         if part.merge_partition_surface_edge == 2:
-            last_2_list.append({
-                "y_max": current_y_max,
-                "y_min": current_y_min,
-                "data_idx": data_idx,
-                "part": part
-            })
+            last_2_list.append({"y_max": current_y_max, "y_min": current_y_min, "data_idx": data_idx, "part": part})
         elif part.merge_partition_surface_edge == 1:
             for info in last_2_list:
                 if (abs(current_y_max - info["y_max"]) <= self.process_config["y_partition_threshold"] and
@@ -611,6 +589,7 @@ class DataFindBlocks:
         }
         inside_data = []
         active_partitions = []
+        z_pos = 0
         current_jig = None
 
         for frame_idx, data_obj in enumerate(resetallsendpointdata):
@@ -696,11 +675,7 @@ class DataFindBlocks:
         inside_data = inside_data[:20]  # 最多保留20个分区
         new_inside_data = self.handle_inside_data(inside_data)
 
-        return {
-            "jig_data": jig_data,
-            "outside_data": outside_data,
-            "inside_data": new_inside_data
-        }
+        return {"jig_data": jig_data, "outside_data": outside_data, "inside_data": new_inside_data}
 
     def handle_inside_data(self, inside_data):
         '''
@@ -785,13 +760,7 @@ class DataFindBlocks:
                     )
                 )
 
-            sub_list.sort(
-                key=lambda sub: (
-                    float(sub.subinside_y_max or 0),
-                    float(sub.subinside_y_min or 0),
-                ),
-                reverse=True,
-            )
+            sub_list.sort(key=lambda sub: (float(sub.subinside_y_max or 0), float(sub.subinside_y_min or 0),), reverse=True,)
 
             inside_objs.append(InsideData(inside_id=next(inside_counter), subinside_datalist=sub_list))
 
@@ -914,12 +883,7 @@ class DataFindBlocks:
                             subinside_z_max=int(round(float(sub.subinside_z_max or 0)))
                         )
                     )
-            inside_data_list.append(
-                InsideData(
-                    inside_id=idx,
-                    subinside_datalist=subinside_list if subinside_list else None
-                )
-            )
+            inside_data_list.append(InsideData(inside_id=idx, subinside_datalist=subinside_list if subinside_list else None))
 
         # 构建BlockData对象
         block_data = BlockData(

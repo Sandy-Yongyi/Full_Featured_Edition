@@ -10,4 +10,3 @@ class UiScalingTests(unittest.TestCase):
         stylesheet = theme.build_industrial_stylesheet()
         self.assertIn('font-size: 16px', stylesheet)
         self.assertIn('padding: 11px 15px', stylesheet)
-

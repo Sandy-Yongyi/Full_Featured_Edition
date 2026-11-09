@@ -310,11 +310,7 @@ class LidarManager:
         self._init_lidars()
 
     def _init_lidars(self):
-        lidar_class_map = {
-            "111": LidarSick111,
-            "120": LidarSick120,
-            "483": LidarSick483,
-        }
+        lidar_class_map = {"111": LidarSick111, "120": LidarSick120, "483": LidarSick483, }
         for lidar_id, cfg in self.config.items():
             lidar_type = cfg.get("type", "111")
             lidar_class = lidar_class_map.get(lidar_type, LidarSick111)

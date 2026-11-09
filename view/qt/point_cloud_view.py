@@ -17,7 +17,7 @@ class QtPointCloudView(QOpenGLWidget):
         self.points = np.empty((0, 3), dtype=np.float32)
         self.colors: np.ndarray | None = None
         self.boxes_data = None
-        self.layer_visible = dict.fromkeys(("points", "outside", "inside", "jig"), True)
+        self.layer_visible: dict[str, bool] = dict.fromkeys(("points", "outside", "inside", "jig"), True)
         self._box_layers = {}
         self.box_vertices, self.box_colors = box_geometry(None)
         self.scene_center = np.zeros(3, dtype=np.float32)
@@ -123,8 +123,7 @@ class QtPointCloudView(QOpenGLWidget):
         matrix = self.camera_matrix()
         camera = np.asarray(points)[:, :3] @ matrix[:3, :3].T + matrix[:3, 3]
         aspect, half_height = self._projection_size()
-        return np.column_stack(((camera[:, 0] / (half_height * aspect) + 1) * self.width() / 2,
-                                (1 - camera[:, 1] / half_height) * self.height() / 2))
+        return np.column_stack(((camera[:, 0] / (half_height * aspect) + 1) * self.width() / 2, (1 - camera[:, 1] / half_height) * self.height() / 2))
 
     def pick_orbit_center(self, position, radius_px: float = 12.0) -> bool:
         if not self.layer_visible["points"] or not len(self.points):
@@ -140,9 +139,7 @@ class QtPointCloudView(QOpenGLWidget):
             pixels = self.project_points(chunk)
             distance = np.sum((pixels - target) ** 2, axis=1)
             depths = chunk @ matrix[2, :3] + matrix[2, 3]
-            candidates = np.flatnonzero((distance <= best_distance + 0.0001) &
-                                       (distance <= radius_px ** 2) &
-                                       (np.abs(depths) <= self.scene_radius * 20))
+            candidates = np.flatnonzero((distance <= best_distance + 0.0001) & (distance <= radius_px ** 2) & (np.abs(depths) <= self.scene_radius * 20))
             if not len(candidates):
                 continue
             minimum = float(distance[candidates].min())
@@ -167,8 +164,7 @@ class QtPointCloudView(QOpenGLWidget):
         radius = self.scene_radius
         vertices = []
         for offset in np.linspace(-radius, radius, 21):
-            vertices.extend(((cx + offset, floor, cz - radius), (cx + offset, floor, cz + radius),
-                             (cx - radius, floor, cz + offset), (cx + radius, floor, cz + offset)))
+            vertices.extend(((cx + offset, floor, cz - radius), (cx + offset, floor, cz + radius), (cx - radius, floor, cz + offset), (cx + radius, floor, cz + offset)))
         return np.ascontiguousarray(vertices, dtype=np.float32)
 
     @staticmethod
@@ -182,10 +178,7 @@ class QtPointCloudView(QOpenGLWidget):
         # X min -> vivid blue, middle -> cyan, X max -> mint green.
         # Keep a broad hue range so depth remains visible on the dark background.
         stops = np.array([[0.18, 0.40, 1.0], [0.12, 0.86, 1.0], [0.20, 0.95, 0.55]])
-        return np.column_stack([
-            np.interp(normalized, (0.0, 0.5, 1.0), stops[:, channel])
-            for channel in range(3)
-        ]).astype(np.float32)
+        return np.column_stack([np.interp(normalized, (0.0, 0.5, 1.0), stops[:, channel]) for channel in range(3)]).astype(np.float32)
 
     def _request_repaint(self) -> None:
         if not self._repaint_pending:
@@ -229,14 +222,17 @@ class QtPointCloudView(QOpenGLWidget):
         finally:
             self.doneCurrent()
 
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, a0) -> None:
+        event = a0
+        if event is None:
+            return
         self.release_gl_resources()
         super().closeEvent(event)
 
     def paintGL(self) -> None:  # pragma: no cover - requires a desktop GL context
         from OpenGL import GL
 
-        GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
+        GL.glClear(int(GL.GL_COLOR_BUFFER_BIT) | int(GL.GL_DEPTH_BUFFER_BIT))
         GL.glEnable(GL.GL_DEPTH_TEST)
         pixel_ratio = self.devicePixelRatioF()
         GL.glViewport(0, 0, int(self.width() * pixel_ratio), int(self.height() * pixel_ratio))
@@ -304,20 +300,29 @@ class QtPointCloudView(QOpenGLWidget):
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "等待点云数据")
         painter.end()
 
-    def mousePressEvent(self, event) -> None:
+    def mousePressEvent(self, a0) -> None:
+        event = a0
+        if event is None:
+            return
         self._last_mouse = event.position().toPoint()
 
-    def mouseDoubleClickEvent(self, event) -> None:
+    def mouseDoubleClickEvent(self, a0) -> None:
+        event = a0
+        if event is None:
+            return
         self._last_mouse = None
         if event.button() == Qt.MouseButton.LeftButton and self.pick_orbit_center(event.position()):
             event.accept()
         else:
             event.ignore()
 
-    def mouseReleaseEvent(self, _event) -> None:
+    def mouseReleaseEvent(self, a0) -> None:
         self._last_mouse = None
 
-    def mouseMoveEvent(self, event) -> None:
+    def mouseMoveEvent(self, a0) -> None:
+        event = a0
+        if event is None:
+            return
         if self._last_mouse is None:
             return
         current = event.position().toPoint()
@@ -331,7 +336,10 @@ class QtPointCloudView(QOpenGLWidget):
         self._last_mouse = current
         self._request_repaint()
 
-    def wheelEvent(self, event) -> None:
+    def wheelEvent(self, a0) -> None:
+        event = a0
+        if event is None:
+            return
         factor = 1.0 + event.angleDelta().y() * 0.001
         self.zoom = max(0.1, min(10.0, self.zoom * factor))
         self._request_repaint()

@@ -66,6 +66,7 @@ class Float32(WireType):
 
 class FixedStr(WireType):
     """定长字符串 (UTF-8编码, \\x00 填充)"""
+
     def __init__(self, length: int):
         self.fmt = f'{length}s'
         self.size = length
@@ -74,6 +75,7 @@ class FixedStr(WireType):
 
 class Repeat:
     """标记列表字段的默认重复次数，仅在 from_bytes 时使用"""
+
     def __init__(self, count: int):
         self.count = count
 

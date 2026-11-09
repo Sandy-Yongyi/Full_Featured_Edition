@@ -16,4 +16,3 @@ class QtPreviewTests(unittest.TestCase):
         self.assertIsNone(state.points)
         self.assertFalse(any(device.online for device in state.devices))
         self.assertTrue(PreviewController().preview_mode)
-

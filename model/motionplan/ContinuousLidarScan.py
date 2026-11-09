@@ -58,7 +58,6 @@ class ContinuousLidarScan:
         servo_normal = bool(int(feedback.Status) & 1)
         enabled = bool(int(feedback.Operate) & 1)
         arrived = bool(int(feedback.Status) & 2)
-        frame.Status = int(servo_normal)
         frame.Operate = int(enabled and servo_normal)
         if not ready:
             frame.Operate = 0

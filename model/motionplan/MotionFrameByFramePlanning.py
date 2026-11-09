@@ -60,8 +60,8 @@ class MotionFrameByFramePlanning:
 
         moving_frame.AxisList = axis_list
         moving_frame.Enable = enable_value
-        moving_frame.Gun_Cont1 = 0
-        moving_frame.Gun_Cont2 = 0
+        moving_frame.Gun_cont1 = 0
+        moving_frame.Gun_cont2 = 0
         moving_frame.HeartBeat = proc.plc_data.HeartBeat
         moving_frame.Operate = 0 if stop_chain else 0x02
         # bit15 反映全部帧队列中有无非零点云，与设备使能和停链状态无关。
@@ -94,15 +94,11 @@ class MotionFrameByFramePlanning:
             )
 
             if not device_operate_enabled or should_return_safe:
-                axis_cmds, all_ready = self._build_inactive_device_axes(
-                    proc, sn, machine_cfg, runtime_cfg, machine_type, should_return_safe
-                )
+                axis_cmds, all_ready = self._build_inactive_device_axes(proc, sn, machine_cfg, runtime_cfg, machine_type, should_return_safe)
                 proc.device_origin_complete[sn] = all_ready
                 device_enable = not all_ready
             else:
-                axis_cmds, device_stop_chain = self._build_active_device_axes(
-                    proc, sn, machine_cfg, runtime_cfg, machine_type
-                )
+                axis_cmds, device_stop_chain = self._build_active_device_axes(proc, sn, machine_cfg, runtime_cfg, machine_type)
                 stop_chain = stop_chain or device_stop_chain
                 device_enable = True
 
@@ -122,19 +118,13 @@ class MotionFrameByFramePlanning:
 
         if machine_type == "xn_updown2":
             self.xn_updown2_planner.reset_motion_state(sn, preserve_safe_return=True)
-            axis_cmds, all_ready = self.xn_updown2_planner.request_safe_return(
-                machine_cfg, runtime_cfg, proc.plc_data
-            )
+            axis_cmds, all_ready = self.xn_updown2_planner.request_safe_return(machine_cfg, runtime_cfg, proc.plc_data)
             proc.device_returning_to_origin[sn] = not all_ready
         elif machine_type == "out_2d_servo":
-            axis_cmds, all_ready = self.out_2d_servo_planner.build_zero_commands(
-                machine_cfg, runtime_cfg, proc.plc_data
-            )
+            axis_cmds, all_ready = self.out_2d_servo_planner.build_zero_commands(machine_cfg, runtime_cfg, proc.plc_data)
             proc.device_returning_to_origin[sn] = not all_ready
         elif should_return_safe:
-            axis_cmds, all_ready = self.motion_to_target.move_to_origin_safe(
-                machine_cfg, runtime_cfg, proc.plc_data
-            )
+            axis_cmds, all_ready = self.motion_to_target.move_to_origin_safe(machine_cfg, runtime_cfg, proc.plc_data)
             proc.device_returning_to_origin[sn] = not all_ready
         else:
             axis_cmds = self.motion_to_target.hold_current_position(machine_cfg, proc.plc_data)
@@ -148,19 +138,13 @@ class MotionFrameByFramePlanning:
         proc.device_origin_complete[sn] = False
 
         if machine_type == "xn_updown2":
-            axis_cmds = self.xn_updown2_planner.auto_xn_updown2_move(
-                machine_cfg, runtime_cfg, proc.plc_data, proc.frame_queue_manager
-            )
+            axis_cmds = self.xn_updown2_planner.auto_xn_updown2_move(machine_cfg, runtime_cfg, proc.plc_data, proc.frame_queue_manager)
             device_stop_chain = False
         elif machine_type == "xn_updown4":
-            axis_cmds = self.xn_updown4_planner.auto_xn_updown4_move(
-                machine_cfg, runtime_cfg, proc.plc_data, proc.frame_queue_manager
-            )
+            axis_cmds = self.xn_updown4_planner.auto_xn_updown4_move(machine_cfg, runtime_cfg, proc.plc_data, proc.frame_queue_manager)
             device_stop_chain = False
         elif machine_type == "out_2d_servo":
-            axis_cmds, device_stop_chain = self.out_2d_servo_planner.auto_out_2d_servo_move(
-                machine_cfg, runtime_cfg, proc.plc_data, proc.frame_queue_manager
-            )
+            axis_cmds, device_stop_chain = self.out_2d_servo_planner.auto_out_2d_servo_move(machine_cfg, runtime_cfg, proc.plc_data, proc.frame_queue_manager)
         elif machine_type == "out_fx":
             axis_cmds, _, device_stop_chain = self.out_fx_planner.auto_out_fx_move(
                 machine_cfg=machine_cfg,
@@ -212,9 +196,7 @@ class MotionFrameByFramePlanning:
         if machine_cfg.get("type") == "xn_updown2":
             self.xn_updown2_planner.reset_motion_state(sn)
         if machine_cfg.get("type") == "out_2d_servo":
-            axis_cmds, all_ready = self.out_2d_servo_planner.build_zero_commands(
-                machine_cfg, runtime_cfg, proc.plc_data
-            )
+            axis_cmds, all_ready = self.out_2d_servo_planner.build_zero_commands(machine_cfg, runtime_cfg, proc.plc_data)
             proc.device_returning_to_origin[sn] = not all_ready
             proc.device_origin_complete[sn] = all_ready
         else:
@@ -263,9 +245,7 @@ class MotionFrameByFramePlanning:
                 self.xn_updown4_planner.reset_motion_state(sn)
             if machine_type == "xn_updown2":
                 self.xn_updown2_planner.reset_motion_state(sn, preserve_safe_return=True)
-                axis_cmds, all_ready = self.xn_updown2_planner.request_safe_return(
-                    machine_cfg, runtime_cfg, proc.plc_data
-                )
+                axis_cmds, all_ready = self.xn_updown2_planner.request_safe_return(machine_cfg, runtime_cfg, proc.plc_data)
                 proc.device_returning_to_origin[sn] = not all_ready
                 proc.device_origin_complete[sn] = all_ready
                 if axis_cmds:
@@ -275,9 +255,7 @@ class MotionFrameByFramePlanning:
                 continue
 
             if machine_type == "out_2d_servo":
-                axis_cmds, all_ready = self.out_2d_servo_planner.build_zero_commands(
-                    machine_cfg, runtime_cfg, proc.plc_data
-                )
+                axis_cmds, all_ready = self.out_2d_servo_planner.build_zero_commands(machine_cfg, runtime_cfg, proc.plc_data)
                 proc.device_returning_to_origin[sn] = not all_ready
                 proc.device_origin_complete[sn] = all_ready
                 if axis_cmds:

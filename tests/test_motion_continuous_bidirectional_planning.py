@@ -1,15 +1,10 @@
 import copy
 import contextlib
 import io
-import os
-import sys
+from pathlib import Path
 import unittest
 from types import SimpleNamespace
 
-
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
 
 from model.motionplan.MachineAxisMap import LIDAR_AXIS_MAP
 from model.motionplan.MotionContinuousBidirectionalPlanning import MotionContinuousBidirectionalPlanning
@@ -53,7 +48,7 @@ class _FakeFrameQueueManager:
 
 
 def _build_proc(status=0x7F, operate=0x01, occupied=False, x_limits=None):
-    machine_config = TomlLoader.load(os.path.join(PROJECT_ROOT, "model", "tomls", "MachineConfig3.toml"))
+    machine_config = TomlLoader.load(str(Path(__file__).resolve().parents[1] / "model" / "tomls" / "MachineConfig3.toml"))
     # Fix only the axes asserted by cleaning tests; never edit deployment TOML.
     if x_limits is not None:
         for sn, limit in x_limits.items():

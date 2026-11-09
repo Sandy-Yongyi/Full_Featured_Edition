@@ -72,8 +72,8 @@ class ViewResourceTests(unittest.TestCase):
         view._point_buffers = buffers
         view._buffer_context = context
         with patch.object(view, "context", return_value=context), \
-             patch.object(view, "makeCurrent") as current, patch.object(view, "doneCurrent") as done, \
-             patch("PyQt6.QtGui.QOpenGLContext.currentContext", return_value=context):
+                patch.object(view, "makeCurrent") as current, patch.object(view, "doneCurrent") as done, \
+                patch("PyQt6.QtGui.QOpenGLContext.currentContext", return_value=context):
             view.release_gl_resources()
             view.release_gl_resources()
         current.assert_called_once()

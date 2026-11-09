@@ -56,7 +56,7 @@ class ObservabilityTests(unittest.TestCase):
 
     def test_log_polling_preserves_selection_and_tracks_bounded_snapshot(self):
         from PyQt6.QtGui import QTextCursor
-        from control.UiState import LogEvent, UiState
+        from control.UiState import LogEvent
         from view.qt.widgets import RuntimeLogView
         page = RuntimeLogView()
         entries = tuple(LogEvent("INFO", f"event {i}") for i in range(3))
@@ -90,7 +90,7 @@ class ObservabilityTests(unittest.TestCase):
         self.assertEqual("laser disconnected", events[0].message)
 
     def test_rolling_multiline_unicode_logs_match_the_latest_snapshot(self):
-        from control.UiState import LogEvent, UiState
+        from control.UiState import LogEvent
         from view.qt.widgets import RuntimeLogView
         page = RuntimeLogView()
         first = LogEvent("INFO", "开始 🟢\n采集就绪")
@@ -99,7 +99,6 @@ class ObservabilityTests(unittest.TestCase):
         page.apply_events((first, second))
         page.apply_events((second, third))
         self.assertEqual("[ERROR] 保存故障\n[INFO] 停止完成", page.toPlainText())
-
 
     def test_realtime_page_only_shows_recent_events(self):
         from control.UiState import LogEvent, UiState
@@ -116,9 +115,7 @@ class ObservabilityTests(unittest.TestCase):
         from view.qt.pages import RealtimeControlPage
         page = RealtimeControlPage(SimpleNamespace())
         printed = tuple(LogEvent("INFO", f"print {i}", "stdout") for i in range(8))
-        others = (LogEvent("INFO", "logger message", "logger"),
-                  LogEvent("WARNING", "authorization message", "authorization"),
-                  LogEvent("ERROR", "stderr message", "stderr")) * 4
+        others = (LogEvent("INFO", "logger message", "logger"), LogEvent("WARNING", "authorization message", "authorization"), LogEvent("ERROR", "stderr message", "stderr")) * 4
         state = UiState(strategy_name="complete_workpiece", logs=printed + others)
         page.apply_state(state)
         text = page.recent_events.toPlainText()

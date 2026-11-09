@@ -9,6 +9,7 @@ def ui_px(value: int) -> int:
     """Scale interface dimensions, independent of the OpenGL scene."""
     return int(value * UI_SCALE + 0.5)
 
+
 BACKGROUND = "#071220"
 PANEL = "#0c1b30"
 PANEL_ALT = "#10243f"

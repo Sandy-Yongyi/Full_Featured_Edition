@@ -21,8 +21,10 @@ class PasswordAuthorizationDialog(QDialog):
         self.error_label.setStyleSheet("color: #f56b70;")
         layout.addRow(self.error_label)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Confirm" if self.english else "确认")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancel" if self.english else "取消")
+        for role, text in ((QDialogButtonBox.StandardButton.Ok, "Confirm" if self.english else "确认"), (QDialogButtonBox.StandardButton.Cancel, "Cancel" if self.english else "取消")):
+            button = buttons.button(role)
+            if button is not None:
+                button.setText(text)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         self.rejected.connect(self._on_rejected)

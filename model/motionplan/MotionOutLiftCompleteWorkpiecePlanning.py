@@ -6,6 +6,7 @@ from model.utils.TomlLoader import TomlLoader
 
 class MotionOutLiftCompleteWorkpiecePlanning:
     '''按完整工件模式下外侧二维设备规划。（变频二维，只需要返回xmin,ymax,ymin）'''
+
     def __init__(self):
         self.spray_cfg = TomlLoader.load(os.getcwd() + "\\model\\tomls\\sprayconfig.toml")
         self.process_cfg = TomlLoader.load(os.getcwd() + "\\model\\tomls\\ProcessConfig.toml")
@@ -93,14 +94,11 @@ class MotionOutLiftCompleteWorkpiecePlanning:
                 z_front_offset=z_front_offset,
                 z_after_offset=z_after_offset,
             )
-            return AxisData(Pos=x_target,
-                            Speed=outside.outside_y_max,
-                            Status=outside.outside_y_min), False
+            return AxisData(Pos=x_target, Speed=outside.outside_y_max, Status=outside.outside_y_min), False
 
         return AxisData(Pos=0, Speed=0, Status=0), False
 
-    def _build_cabinet_x_target(self, outside, out_front_x_offset, x_position,
-                                start_z_chain, end_z_chain, z_position, z_front_offset, z_after_offset):
+    def _build_cabinet_x_target(self, outside, out_front_x_offset, x_position, start_z_chain, end_z_chain, z_position, z_front_offset, z_after_offset):
         workpiece_origin_reference_x = self._get_workpiece_origin_reference_x()
         x_dis = self._resolve_cabinet_x_dis(
             out_front_x_offset=out_front_x_offset,
@@ -112,8 +110,7 @@ class MotionOutLiftCompleteWorkpiecePlanning:
         )
         return int(workpiece_origin_reference_x - int(outside.outside_x_max or 0) - x_position - x_dis)
 
-    def _resolve_cabinet_x_dis(self, out_front_x_offset, start_z_chain, end_z_chain,
-                               z_position, z_front_offset, z_after_offset):
+    def _resolve_cabinet_x_dis(self, out_front_x_offset, start_z_chain, end_z_chain, z_position, z_front_offset, z_after_offset):
         out_front_x_offset = max(0, int(out_front_x_offset or 0))
         if out_front_x_offset == 0:
             return 0

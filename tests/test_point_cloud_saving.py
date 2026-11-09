@@ -9,8 +9,7 @@ import numpy as np
 
 class BufferTests(unittest.TestCase):
     def setUp(self):
-        self.assertIsNotNone(importlib.util.find_spec("model.utils.PointCloudSaveBuffer"),
-                             "shared point cloud buffer is not implemented")
+        self.assertIsNotNone(importlib.util.find_spec("model.utils.PointCloudSaveBuffer"), "shared point cloud buffer is not implemented")
         from model.utils.PointCloudSaveBuffer import SharedPointCloudPool, PointCloudSaveBuffer
         self.pool = SharedPointCloudPool.create(block_bytes=72, block_count=4)
         self.acks = mp.get_context("spawn").Queue()
@@ -29,8 +28,7 @@ class BufferTests(unittest.TestCase):
         first = self.buffer.seal("a")
         self.buffer.append("left", a + 100)
         second = self.buffer.seal("b")
-        self.assertTrue(set(b["slot_id"] for b in first["channels"]["left"]).isdisjoint(
-            b["slot_id"] for b in second["channels"]["left"]))
+        self.assertTrue(set(b["slot_id"] for b in first["channels"]["left"]).isdisjoint(b["slot_id"] for b in second["channels"]["left"]))
         from model.utils.PointCloudSaveBuffer import read_blocks
         actual = np.concatenate(list(read_blocks(self.pool.descriptor, first["channels"]["left"])))
         np.testing.assert_array_equal(actual, a)
@@ -43,8 +41,7 @@ class BufferTests(unittest.TestCase):
         with self.assertRaises(SaveBufferFull):
             self.buffer.append("combined", data[:1])
         self.assertFalse(self.buffer.acknowledge({"job_id": "wrong", "blocks": job["channels"]["combined"]}))
-        np.testing.assert_array_equal(np.concatenate(list(read_blocks(self.pool.descriptor,
-                                                                     job["channels"]["combined"]))), data)
+        np.testing.assert_array_equal(np.concatenate(list(read_blocks(self.pool.descriptor, job["channels"]["combined"]))), data)
         ack = {"job_id": "a", "blocks": job["channels"]["combined"]}
         self.assertTrue(self.buffer.acknowledge(ack))
         self.buffer.append("left", data[:1])
@@ -71,8 +68,7 @@ class BufferTests(unittest.TestCase):
 class WriterTests(BufferTests):
     def setUp(self):
         super().setUp()
-        self.assertIsNotNone(importlib.util.find_spec("control.PointCloudSaveProcess"),
-                             "point cloud writer is not implemented")
+        self.assertIsNotNone(importlib.util.find_spec("control.PointCloudSaveProcess"), "point cloud writer is not implemented")
         self.directory = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent)
 
     def tearDown(self):
@@ -83,8 +79,7 @@ class WriterTests(BufferTests):
     def make_job(self):
         points = np.array([[1.23, 2.34, 95], [3, 4, 98], [5, 6, 2], [7, 8, 5]])
         self.buffer.append("combined", points)
-        return points, self.buffer.seal("20261012_120000_000001", z_reset_threshold=100,
-                                      filename_suffix="20261012_120000_000001", incomplete=False)
+        return points, self.buffer.seal("20261012_120000_000001", z_reset_threshold=100, filename_suffix="20261012_120000_000001", incomplete=False)
 
     def test_txt_matches_legacy_normalization_across_blocks(self):
         from control.PointCloudSaveProcess import save_job
@@ -102,8 +97,7 @@ class WriterTests(BufferTests):
         from control.PointCloudSaveProcess import save_job
         points = np.array([[3., 20., 98.], [2., 10., 98.], [1., 20., 95.], [9., 2., 50.]])
         self.buffer.append("combined", points)
-        job = self.buffer.seal("reverse", strategy="continuous_bidirectional",
-                               normalization="absolute_sorted", preview_enabled=True)
+        job = self.buffer.seal("reverse", strategy="continuous_bidirectional", normalization="absolute_sorted", preview_enabled=True)
         preview = save_job(job, self.pool.descriptor, self.directory.name, file_format="npy")
         expected = points[np.lexsort((points[:, 0], points[:, 1], points[:, 2]))]
         np.testing.assert_array_equal(np.load(Path(self.directory.name) / "combined_reverse.npy"), expected)
@@ -125,8 +119,7 @@ class WriterTests(BufferTests):
         from control.PointCloudSaveProcess import save_job
         from model.dataprocess.DataSplitting import DataSplitting
         threshold = 160000 / 5.3
-        points = np.column_stack((np.zeros(12), np.zeros(12),
-                                  np.tile([threshold * .95, 1], 6)))
+        points = np.column_stack((np.zeros(12), np.zeros(12), np.tile([threshold * .95, 1], 6)))
         self.buffer.append("left", points)
         job = self.buffer.seal("wraps", z_reset_threshold=threshold)
         save_job(job, self.pool.descriptor, self.directory.name, file_format="npy")
@@ -151,8 +144,7 @@ class WriterTests(BufferTests):
         context = mp.get_context("spawn")
         tasks, statuses = context.Queue(), context.Queue()
         points, job = self.make_job()
-        worker = PointCloudSaveProcess(tasks, self.acks, statuses, self.pool.descriptor,
-                                      self.directory.name)
+        worker = PointCloudSaveProcess(tasks, self.acks, statuses, self.pool.descriptor, self.directory.name)
         worker.start()
         try:
             self.assertEqual(statuses.get(timeout=10)["type"], "ready")
@@ -162,8 +154,7 @@ class WriterTests(BufferTests):
             self.assertTrue(self.buffer.acknowledge(ack))
             worker.join(10)
             self.assertEqual(worker.exitcode, 0)
-            self.assertEqual(len(np.loadtxt(Path(self.directory.name) /
-                                           f"combined_{job['filename_suffix']}.txt")), len(points))
+            self.assertEqual(len(np.loadtxt(Path(self.directory.name) / f"combined_{job['filename_suffix']}.txt")), len(points))
         finally:
             if worker.is_alive():
                 worker.terminate()
@@ -177,8 +168,7 @@ class WriterTests(BufferTests):
         context = mp.get_context("spawn")
         tasks, statuses = context.Queue(), context.Queue()
         _, job = self.make_job()
-        worker = PointCloudSaveProcess(tasks, self.acks, statuses, self.pool.descriptor,
-                                      self.directory.name, config={"point_cloud_save_format": "invalid"})
+        worker = PointCloudSaveProcess(tasks, self.acks, statuses, self.pool.descriptor, self.directory.name, config={"point_cloud_save_format": "invalid"})
         worker.start()
         try:
             message = statuses.get(timeout=10)

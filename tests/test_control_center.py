@@ -21,11 +21,7 @@ class _Runtime:
 
     def poll(self):
         self.poll_count += 1
-        return {
-            "chain_position": 18229,
-            "chain_status": "moving_forward",
-            "logs": [LogEvent(level="INFO", message="PLC connected", source="plc")],
-        }
+        return {"chain_position": 18229, "chain_status": "moving_forward", "logs": [LogEvent(level="INFO", message="PLC connected", source="plc")], }
 
 
 class ControlCenterTests(unittest.TestCase):
@@ -69,12 +65,7 @@ class ControlCenterTests(unittest.TestCase):
         runtime = _Runtime()
         persisted = []
         commands = []
-        center = ControlCenter(
-            runtime,
-            strategy_name="continuous_bidirectional",
-            save_chain_speed=persisted.append,
-            send_control=commands.append,
-        )
+        center = ControlCenter(runtime, strategy_name="continuous_bidirectional", save_chain_speed=persisted.append, send_control=commands.append,)
 
         center.set_chain_speed(32)
         self.assertEqual([32], persisted)
@@ -168,4 +159,3 @@ class ControlCenterTests(unittest.TestCase):
         center.stop()
         center.poll_once()
         self.assertIn("点云保存未排空", center.build_ui_state().alarms)
-

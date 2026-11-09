@@ -1,5 +1,6 @@
 """A sibling process owns normalization and file I/O, independent of PLC frame delivery."""
 
+from functools import partial
 import json
 import multiprocessing
 from multiprocessing import shared_memory
@@ -15,7 +16,7 @@ from model.utils.ProcessHeartbeat import ProcessHeartbeat
 from model.utils.WorkpieceOriginUtil import transform_points_for_origin
 
 
-def make_preview(points, voxel_size_mm=0):
+def make_preview(points, voxel_size_mm: float = 0.0):
     if voxel_size_mm <= 0 or not len(points):
         return points
     cells = np.floor(points / voxel_size_mm)
@@ -49,8 +50,26 @@ def _normalized_chunks(memory, descriptor, blocks, threshold, heartbeat):
             yield data
 
 
-def save_job(job, pool_descriptor, output_dir, file_format="txt", heartbeat=None,
-             preview_voxel_size_mm=0):
+def _absolute_chunks(points, heartbeat):
+    for start in range(0, len(points), 32768):
+        heartbeat.touch()
+        yield points[start:start + 32768].copy()
+
+
+def _prepare_channel(memory, descriptor, blocks, threshold, normalization, heartbeat):
+    if normalization == "absolute_sorted":
+        points = np.concatenate([block_view(memory, descriptor, block) for block in blocks])
+        points = points[np.lexsort((points[:, 0], points[:, 1], points[:, 2]))]
+        return partial(_absolute_chunks, points, heartbeat), 0.0, len(points)
+    chunks = partial(_normalized_chunks, memory, descriptor, blocks, threshold, heartbeat)
+    minimum, total = float("inf"), 0
+    for data in chunks():
+        minimum = float(np.minimum(minimum, np.min(data[:, 2])))
+        total += len(data)
+    return chunks, minimum, total
+
+
+def save_job(job, pool_descriptor, output_dir, file_format="txt", heartbeat=None, preview_voxel_size_mm: float = 0.0):
     if file_format not in ("txt", "npy"):
         raise ValueError("point_cloud_save_format must be txt or npy")
     heartbeat = heartbeat or ProcessHeartbeat()
@@ -72,26 +91,7 @@ def save_job(job, pool_descriptor, output_dir, file_format="txt", heartbeat=None
         for channel, blocks in job["channels"].items():
             if not blocks:
                 continue
-            if normalization == "absolute_sorted":
-                # Continuous passes use absolute scan positions, including reverse passes.
-                # Sort in the save process, never normalize the start of a pass to zero.
-                points = np.concatenate([block_view(memory, pool_descriptor, block) for block in blocks])
-                points = points[np.lexsort((points[:, 0], points[:, 1], points[:, 2]))]
-                minimum, total = 0.0, len(points)
-
-                def chunks():
-                    for start in range(0, len(points), 32768):
-                        heartbeat.touch()
-                        yield points[start:start + 32768].copy()
-            else:
-                def chunks():
-                    return _normalized_chunks(memory, pool_descriptor, blocks, threshold, heartbeat)
-
-                minimum = float("inf")
-                total = 0
-                for data in chunks():
-                    minimum = float(np.minimum(minimum, np.min(data[:, 2])))
-                    total += len(data)
+            chunks, minimum, total = _prepare_channel(memory, pool_descriptor, blocks, threshold, normalization, heartbeat)
             filename = output_dir / f"{channel}_{suffix}.{file_format}"
             partial = filename.with_name(filename.name + ".part")
             if filename.exists():
@@ -122,9 +122,7 @@ def save_job(job, pool_descriptor, output_dir, file_format="txt", heartbeat=None
             heartbeat.touch()
         manifest = output_dir / f"{job['job_id']}.complete.json"
         partial_manifest = manifest.with_name(manifest.name + ".part")
-        partial_manifest.write_text(json.dumps({"job_id": job["job_id"], "files": files,
-                                                "incomplete": bool(job.get("incomplete", False))},
-                                               ensure_ascii=False), encoding="utf-8")
+        partial_manifest.write_text(json.dumps({"job_id": job["job_id"], "files": files, "incomplete": bool(job.get("incomplete", False))}, ensure_ascii=False), encoding="utf-8")
         partial_manifest.replace(manifest)
     finally:
         memory.close()
@@ -138,8 +136,7 @@ def save_job(job, pool_descriptor, output_dir, file_format="txt", heartbeat=None
 
 
 class PointCloudSaveProcess(multiprocessing.Process):
-    def __init__(self, task_queue, ack_queue, status_queue, pool_descriptor, output_dir,
-                 viz_queue=None, heartbeat=None, config=None):
+    def __init__(self, task_queue, ack_queue, status_queue, pool_descriptor, output_dir, viz_queue=None, heartbeat=None, config=None):
         super().__init__(name="PointCloudSaveProcess", daemon=False)
         self.task_queue = task_queue
         self.ack_queue = ack_queue
@@ -154,8 +151,7 @@ class PointCloudSaveProcess(multiprocessing.Process):
         from model.utils.LoggerUtil import logger, check_and_rotate_log
         from model.utils.PointsFileUtil import manage_points_files
 
-        heartbeat = ProcessHeartbeat(self.heartbeat_value,
-                                     self.config.get("process_heartbeat_interval_s", 1))
+        heartbeat = ProcessHeartbeat(self.heartbeat_value, self.config.get("process_heartbeat_interval_s", 1))
         heartbeat.touch(force=True)
         if self.viz_queue is not None:
             # Preview delivery must never hold shutdown waiting for a stopped UI consumer.
@@ -179,18 +175,15 @@ class PointCloudSaveProcess(multiprocessing.Process):
                     self.status_queue.put({"type": "drained"})
                     return
                 started = time.perf_counter()
-                preview = save_job(current_job, self.pool_descriptor, self.output_dir, file_format,
-                                   heartbeat, voxel_size)
+                preview = save_job(current_job, self.pool_descriptor, self.output_dir, file_format, heartbeat, voxel_size)
                 blocks = [block for channel in current_job["channels"].values() for block in channel]
                 self.ack_queue.put({"job_id": current_job["job_id"], "blocks": blocks})
                 elapsed = time.perf_counter() - started
                 logger.info(f"Point cloud job {current_job['job_id']} saved in {elapsed:.3f}s")
-                self.status_queue.put({"type": "saved", "job_id": current_job["job_id"],
-                                       "elapsed_s": elapsed})
+                self.status_queue.put({"type": "saved", "job_id": current_job["job_id"], "elapsed_s": elapsed})
                 if self.viz_queue is not None and preview is not None:
                     try:
-                        self.viz_queue.put_nowait({"points": preview, "boxes": None,
-                                                  "preview_processed": True})
+                        self.viz_queue.put_nowait({"points": preview, "boxes": None, "preview_processed": True})
                     except queue.Full:
                         logger.info("Preview queue busy; saved point cloud is unaffected")
                 manage_points_files(directory=self.output_dir)

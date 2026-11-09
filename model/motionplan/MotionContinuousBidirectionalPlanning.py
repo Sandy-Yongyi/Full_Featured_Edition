@@ -15,17 +15,14 @@ class MotionContinuousBidirectionalPlanning:
     def build_moving_frame(self, proc) -> SendMovingFrameData:
         """生成包含激光轴、工位放行和全部喷涂设备轴的PLC运动帧。"""
         clean_mode_requested = self.cleaning_planner.is_clean_mode_enabled(proc.plc_data.Operate)
-        release_status = 0
         if proc.continuous_scan.stage != "fault" and not clean_mode_requested:
-            release_status = proc.frame_queue_manager.update_continuous_stations(int(proc.plc_data.Status))
+            proc.frame_queue_manager.update_continuous_stations(int(proc.plc_data.Status))
 
         allow_scan = proc.frame_queue_manager.continuous_slot_empty(0) and not proc.continuous_scan_pending and not clean_mode_requested
         moving_frame = proc.continuous_scan.update(proc.plc_data, ready=proc.continuous_lidar_ready and proc.lidar_status == 0, allow_scan=allow_scan)
 
         if proc.continuous_scan.stage == "scanning":
             proc.continuous_scan_pending = True
-        if proc.continuous_scan.stage != "fault":
-            moving_frame.Status |= release_status
 
         self._build_device_safe_motion(proc, moving_frame)
         return moving_frame

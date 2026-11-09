@@ -38,15 +38,15 @@ class DeviceEnableTests(unittest.TestCase):
         from PyQt6.QtWidgets import QApplication
         from control.UiState import UiState, DeviceState
         from view.qt.pages import RealtimeControlPage, DeviceControlPage
-        app = QApplication.instance() or QApplication([])
+        qt_app = QApplication.instance() or QApplication([])
+        self.addCleanup(lambda: qt_app.processEvents())
         sent = []
         controller = SimpleNamespace(set_device_enable_mask=sent.append)
         realtime = RealtimeControlPage(controller)
         realtime.apply_state(UiState(strategy_name='complete_workpiece', chain_speed_mm_s=25))
         self.assertIn('1.50 m/min', realtime.scan_speed.text())
         page = DeviceControlPage(controller)
-        state = UiState(strategy_name='complete_workpiece', running=True,
-                        devices=(DeviceState('PLC', True),))
+        state = UiState(strategy_name='complete_workpiece', running=True, devices=(DeviceState('PLC', True),))
         page.apply_state(state)
         self.assertTrue(all(not b.isEnabled() for b in page.device_buttons))
         for index, button in enumerate(page.device_buttons):

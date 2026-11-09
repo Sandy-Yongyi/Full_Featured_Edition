@@ -30,11 +30,11 @@ class DeploymentTests(unittest.TestCase):
         previous = Path.cwd()
         try:
             with patch.dict(sys.modules, {"deployment_check": type("Checker", (), {"main": checker})}), \
-                 patch.object(sys, "argv", ["main.py", "--check-deployment"]), \
-                 patch("main.multiprocessing.freeze_support"), \
-                 patch("main.disable_console_interaction"), \
-                 patch("main.multiprocessing.set_start_method"), \
-                 patch("main.main", return_value=97) as normal_startup:
+                    patch.object(sys, "argv", ["main.py", "--check-deployment"]), \
+                    patch("main.multiprocessing.freeze_support"), \
+                    patch("main.disable_console_interaction"), \
+                    patch("main.multiprocessing.set_start_method"), \
+                    patch("main.main", return_value=97) as normal_startup:
                 self.assertEqual(23, main.launch())
                 normal_startup.assert_not_called()
         finally:

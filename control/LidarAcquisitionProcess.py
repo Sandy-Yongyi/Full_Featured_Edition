@@ -279,6 +279,8 @@ class LidarAcquisitionProcess(multiprocessing.Process):
 
     def _save_valid_data_core(self, z_value):
         """save_valid_data 核心逻辑 - 将当前帧数据按 z_value 拼接并累积"""
+        if self.save_buffer is None:
+            raise RuntimeError("Point cloud save buffer is not initialized")
         current_frame_data = np.empty((0, 3))
         for direction, state in self.direction_states.items():
             if state.scanning_started and state.last_same_origin_filtered.size > 0 and state.last_diff_origin_filtered.size > 0:
@@ -737,6 +739,8 @@ class LidarAcquisitionProcess(multiprocessing.Process):
         """Seal existing shared blocks; never normalize or copy a workpiece here."""
         if self.save_buffer is None or not self.save_buffer.has_data:
             return
+        if self.save_task_queue is None:
+            raise RuntimeError("Point cloud save task queue is not initialized")
         started = time.perf_counter()
         self._save_job_counter += 1
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -747,8 +751,9 @@ class LidarAcquisitionProcess(multiprocessing.Process):
             strategy=self.strategy_name,
             normalization="absolute_sorted" if is_continuous_bidirectional_mode(self.strategy_name) else "relative_z",
             preview_enabled=not (is_complete_workpiece_mode(self.strategy_name) and getattr(self, "draw_type", 1) == 2),
-            preview_origin_config={key: self.read_data_config[key] for key in ("workpiece_origin_side", "workpiece_origin_reference_x") if key in self.read_data_config}
-                if int(self.read_data_config.get("translate_data_origin", 1)) == 1 else None,
+            preview_origin_config=(
+                {key: self.read_data_config[key] for key in ("workpiece_origin_side", "workpiece_origin_reference_x") if key in self.read_data_config}
+                if int(self.read_data_config.get("translate_data_origin", 1)) == 1 else None),
             z_reset_threshold=self.read_data_config["max_pulse"] / self.read_data_config["pulse_to_mm"])
         self.save_task_queue.put_nowait(job)
         logger.info(f"Submitted point cloud job {job_id}, channels={list(job['channels'])}, "

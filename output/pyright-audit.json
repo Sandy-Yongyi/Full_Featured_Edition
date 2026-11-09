@@ -1,0 +1,174 @@
+{
+    "version": "1.1.414",
+    "time": "1794209813791",
+    "generalDiagnostics": [
+        {
+            "file": "d:\\Code\\Full_Featured_Edition\\control\\PointCloudSaveProcess.py",
+            "severity": "error",
+            "message": "Argument of type \"float\" cannot be assigned to parameter \"voxel_size_mm\" of type \"int\" in function \"make_preview\"\n  \"float\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 105,
+                    "character": 68
+                },
+                "end": {
+                    "line": 105,
+                    "character": 89
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "d:\\Code\\Full_Featured_Edition\\control\\PointCloudSaveProcess.py",
+            "severity": "error",
+            "message": "Argument of type \"float\" cannot be assigned to parameter \"voxel_size_mm\" of type \"int\" in function \"make_preview\"\n  \"float\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 115,
+                    "character": 68
+                },
+                "end": {
+                    "line": 115,
+                    "character": 89
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "d:\\Code\\Full_Featured_Edition\\control\\PointCloudSaveProcess.py",
+            "severity": "error",
+            "message": "Argument of type \"float\" cannot be assigned to parameter \"voxel_size_mm\" of type \"int\" in function \"make_preview\"\n  \"float\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 137,
+                    "character": 33
+                },
+                "end": {
+                    "line": 137,
+                    "character": 54
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "d:\\Code\\Full_Featured_Edition\\view\\qt\\main_window.py",
+            "severity": "error",
+            "message": "Method \"closeEvent\" overrides class \"QWidget\" in an incompatible manner\n  Parameter 2 mismatch: base parameter \"a0\" is keyword parameter, override parameter is position-only",
+            "range": {
+                "start": {
+                    "line": 118,
+                    "character": 8
+                },
+                "end": {
+                    "line": 118,
+                    "character": 18
+                }
+            },
+            "rule": "reportIncompatibleMethodOverride"
+        },
+        {
+            "file": "d:\\Code\\Full_Featured_Edition\\view\\qt\\point_cloud_view.py",
+            "severity": "error",
+            "message": "Method \"closeEvent\" overrides class \"QWidget\" in an incompatible manner\n  Parameter 2 mismatch: base parameter \"a0\" is keyword parameter, override parameter is position-only",
+            "range": {
+                "start": {
+                    "line": 231,
+                    "character": 8
+                },
+                "end": {
+                    "line": 231,
+                    "character": 18
+                }
+            },
+            "rule": "reportIncompatibleMethodOverride"
+        },
+        {
+            "file": "d:\\Code\\Full_Featured_Edition\\view\\qt\\point_cloud_view.py",
+            "severity": "error",
+            "message": "Method \"mousePressEvent\" overrides class \"QWidget\" in an incompatible manner\n  Parameter 2 mismatch: base parameter \"a0\" is keyword parameter, override parameter is position-only",
+            "range": {
+                "start": {
+                    "line": 306,
+                    "character": 8
+                },
+                "end": {
+                    "line": 306,
+                    "character": 23
+                }
+            },
+            "rule": "reportIncompatibleMethodOverride"
+        },
+        {
+            "file": "d:\\Code\\Full_Featured_Edition\\view\\qt\\point_cloud_view.py",
+            "severity": "error",
+            "message": "Method \"mouseDoubleClickEvent\" overrides class \"QWidget\" in an incompatible manner\n  Parameter 2 mismatch: base parameter \"a0\" is keyword parameter, override parameter is position-only",
+            "range": {
+                "start": {
+                    "line": 309,
+                    "character": 8
+                },
+                "end": {
+                    "line": 309,
+                    "character": 29
+                }
+            },
+            "rule": "reportIncompatibleMethodOverride"
+        },
+        {
+            "file": "d:\\Code\\Full_Featured_Edition\\view\\qt\\point_cloud_view.py",
+            "severity": "error",
+            "message": "Method \"mouseReleaseEvent\" overrides class \"QWidget\" in an incompatible manner\n  Parameter 2 mismatch: base parameter \"a0\" is keyword parameter, override parameter is position-only",
+            "range": {
+                "start": {
+                    "line": 316,
+                    "character": 8
+                },
+                "end": {
+                    "line": 316,
+                    "character": 25
+                }
+            },
+            "rule": "reportIncompatibleMethodOverride"
+        },
+        {
+            "file": "d:\\Code\\Full_Featured_Edition\\view\\qt\\point_cloud_view.py",
+            "severity": "error",
+            "message": "Method \"mouseMoveEvent\" overrides class \"QWidget\" in an incompatible manner\n  Parameter 2 mismatch: base parameter \"a0\" is keyword parameter, override parameter is position-only",
+            "range": {
+                "start": {
+                    "line": 319,
+                    "character": 8
+                },
+                "end": {
+                    "line": 319,
+                    "character": 22
+                }
+            },
+            "rule": "reportIncompatibleMethodOverride"
+        },
+        {
+            "file": "d:\\Code\\Full_Featured_Edition\\view\\qt\\point_cloud_view.py",
+            "severity": "error",
+            "message": "Method \"wheelEvent\" overrides class \"QWidget\" in an incompatible manner\n  Parameter 2 mismatch: base parameter \"a0\" is keyword parameter, override parameter is position-only",
+            "range": {
+                "start": {
+                    "line": 333,
+                    "character": 8
+                },
+                "end": {
+                    "line": 333,
+                    "character": 18
+                }
+            },
+            "rule": "reportIncompatibleMethodOverride"
+        }
+    ],
+    "summary": {
+        "filesAnalyzed": 31,
+        "errorCount": 10,
+        "warningCount": 0,
+        "informationCount": 0,
+        "timeInSec": 4.434
+    }
+}
+

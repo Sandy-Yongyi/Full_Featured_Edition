@@ -26,14 +26,12 @@ class PointCloudSaveService:
         self.status_queue = multiprocessing.Queue()
         self.stop_event = multiprocessing.Event()
         self.heartbeat = multiprocessing.Value('d', time.monotonic(), lock=False)
-        self.worker = PointCloudSaveProcess(self.task_queue, self.ack_queue, self.status_queue,
-                                           self.pool.descriptor, output_dir, viz_queue,
-                                           self.heartbeat, self.config)
+        self.worker = PointCloudSaveProcess(self.task_queue, self.ack_queue, self.status_queue, self.pool.descriptor, output_dir, viz_queue, self.heartbeat, self.config)
         self._closed = False
         self._errors = []
         self._drained = False
 
-    def start(self, timeout_s=10):
+    def start(self, timeout_s: int = 10):
         self.worker.start()
         try:
             status = self.status_queue.get(timeout=timeout_s)
@@ -65,7 +63,7 @@ class PointCloudSaveService:
             except queue.Empty:
                 return
 
-    def drain_and_close(self, timeout_s=120):
+    def drain_and_close(self, timeout_s: int = 120):
         """Call ONLY after the producer has exited and flushed its task queue."""
         deadline = time.monotonic() + timeout_s
         self.poll_status()
@@ -106,7 +104,7 @@ class PointCloudSaveService:
         self._closed = True
 
 
-def stop_pipeline(processes, acquisition, service, acquisition_timeout_s=15, save_timeout_s=120):
+def stop_pipeline(processes, acquisition, service, acquisition_timeout_s: int = 15, save_timeout_s: int = 120):
     """Run off the UI thread. Preserve the old controller termination behavior,
     allow acquisition to seal/flush, then drain saving and release parent resources.
     """

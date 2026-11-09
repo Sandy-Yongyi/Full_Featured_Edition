@@ -13,10 +13,10 @@ class ProcessFault:
 
 
 class ProcessHealthMonitor:
-    def __init__(self, unresponsive_timeout_s: float):
+    def __init__(self, unresponsive_timeout_s: int):
         if unresponsive_timeout_s <= 0:
             raise ValueError("unresponsive_timeout_s must be positive")
-        self._unresponsive_timeout_s = float(unresponsive_timeout_s)
+        self._unresponsive_timeout_s = int(unresponsive_timeout_s)
 
     def check(
         self,

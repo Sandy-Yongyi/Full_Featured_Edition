@@ -11,7 +11,7 @@ class MainEntrypointTests(unittest.TestCase):
     def test_code_settings_in_main_are_forwarded_to_qt_startup(self):
         import main
         with patch.multiple(main, CONTROL_TYPE=3, DATA_PATH=r"D:\clouds", DATA_NAME="sample.txt", create=True), \
-             patch("qt_main.main", return_value=17) as start:
+                patch("qt_main.main", return_value=17) as start:
             self.assertEqual(17, main.qt_main())
         start.assert_called_once_with(control_type=3, data_path=r"D:\clouds", data_name="sample.txt")
 
@@ -29,7 +29,7 @@ class MainEntrypointTests(unittest.TestCase):
     def test_qt_public_entry_uses_the_same_guarded_launcher_as_main(self):
         import qt_main
         with patch("main.main", return_value=9), patch("main.multiprocessing.freeze_support"), \
-             patch("main.multiprocessing.set_start_method"), patch("main.disable_console_interaction"):
+                patch("main.multiprocessing.set_start_method"), patch("main.disable_console_interaction"):
             self.assertEqual(9, qt_main.launch())
 
     def test_cold_entrypoint_imports_do_not_create_logs_in_callers_directory(self):
@@ -40,8 +40,7 @@ class MainEntrypointTests(unittest.TestCase):
             "assert 'control.QtPipelineRuntime' not in sys.modules"
         )
         with tempfile.TemporaryDirectory() as directory:
-            result = subprocess.run([sys.executable, "-B", "-c", script, str(root)], cwd=directory,
-                                    capture_output=True, text=True, timeout=15)
+            result = subprocess.run([sys.executable, "-B", "-c", script, str(root)], cwd=directory, capture_output=True, text=True, timeout=15)
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual([], list(Path(directory).iterdir()))
 
@@ -50,4 +49,3 @@ class MainEntrypointTests(unittest.TestCase):
 
         with patch.object(main, "is_already_running", return_value=False), patch.object(main, "qt_main", return_value=17):
             self.assertEqual(17, main.main())
-

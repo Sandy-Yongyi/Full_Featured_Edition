@@ -41,6 +41,7 @@ class PreviewController:
             logs=(LogEvent("INFO", "预览模式：未连接任何生产设备", "preview"),),
         )
 
+
 def main() -> int:
     prepare_environment()
     app = QApplication.instance() or QApplication(sys.argv)

@@ -170,8 +170,8 @@ class MotionCompleteWorkpiecePlanning:
 
         moving_frame.AxisList = axis_list
         moving_frame.Enable = enable_value
-        moving_frame.Gun_Cont1 = 0
-        moving_frame.Gun_Cont2 = 0
+        moving_frame.Gun_cont1 = 0
+        moving_frame.Gun_cont2 = 0
         moving_frame.HeartBeat = proc.plc_data.HeartBeat
         moving_frame.Operate = 0 if stop_chain else 0x02
         # bit15 反映完整工件队列中有无工件，与设备使能和停链状态无关。

@@ -8,11 +8,12 @@ from unittest.mock import patch
 
 import numpy as np
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
 from control.ControlCenter import ControlCenter
 from control.RuntimeStateCollector import RuntimeStateCollector
 from view.qt.main_window import IndustrialMainWindow
+
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 class FullEditionUiTests(unittest.TestCase):
@@ -48,8 +49,7 @@ class FullEditionUiTests(unittest.TestCase):
         boxes = object()
         messages = queue.Queue()
         messages.put({"points": cloud, "boxes": boxes, "preview_processed": True})
-        collector = RuntimeStateCollector(queue.Queue(), SimpleNamespace(
-            voxelReductionFilter=lambda *args, **kwargs: self.fail("preview processed twice")))
+        collector = RuntimeStateCollector(queue.Queue(), SimpleNamespace(voxelReductionFilter=lambda *args, **kwargs: self.fail("preview processed twice")))
         collector.set_visualization_queue(messages)
         center = ControlCenter(SimpleNamespace(poll=collector.poll, start_pipeline=lambda: None, stop_pipeline=lambda: []), "complete_workpiece")
         center.poll_once()

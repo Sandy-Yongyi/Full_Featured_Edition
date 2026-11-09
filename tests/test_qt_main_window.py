@@ -24,8 +24,8 @@ class IndustrialMainWindowTests(unittest.TestCase):
         window = IndustrialMainWindow(FakeController())
         state = UiState(strategy_name='frame_by_frame', chain_position=987)
         with patch.object(window.realtime_page, 'apply_state') as realtime, \
-             patch.object(window.device_control_page, 'apply_state') as devices, \
-             patch.object(window.configuration_page, 'apply_state') as config:
+                patch.object(window.device_control_page, 'apply_state') as devices, \
+                patch.object(window.configuration_page, 'apply_state') as config:
             window.apply_state(state)
             realtime.assert_called_once_with(state)
             devices.assert_called_once_with(state)
@@ -56,19 +56,14 @@ class IndustrialMainWindowTests(unittest.TestCase):
         from view.qt.main_window import IndustrialMainWindow
 
         window = IndustrialMainWindow(controller=FakeController())
-        self.assertEqual(
-            window.route_names(),
-            ("realtime", "device_control", "configuration"),
-        )
+        self.assertEqual(window.route_names(), ("realtime", "device_control", "configuration"),)
 
     def test_running_state_keeps_stop_enabled(self):
         from control.UiState import UiState
         from view.qt.main_window import IndustrialMainWindow
 
         window = IndustrialMainWindow(controller=FakeController())
-        window.apply_state(UiState.empty("complete_workpiece").__class__(
-            strategy_name="complete_workpiece", running=True
-        ))
+        window.apply_state(UiState.empty("complete_workpiece").__class__(strategy_name="complete_workpiece", running=True))
         self.assertTrue(window.realtime_page.stop_button.isEnabled())
 
     def test_workspace_pages_accept_runtime_state_and_expose_inline_configuration(self):
@@ -76,21 +71,14 @@ class IndustrialMainWindowTests(unittest.TestCase):
         from view.qt.main_window import IndustrialMainWindow
 
         window = IndustrialMainWindow(controller=FakeController())
-        state = UiState(
-            strategy_name="complete_workpiece",
-            chain_speed=31,
-            chain_speed_mm_s=25,
-            chain_position=12345,
-            task=TaskState("柜体自动喷涂", "xn_side 分枪", 75, 6, 8),
-        )
+        state = UiState(strategy_name="complete_workpiece", chain_speed=31, chain_speed_mm_s=25, chain_position=12345, task=TaskState("柜体自动喷涂", "xn_side 分枪", 75, 6, 8),)
         window.apply_state(state)
 
         self.assertIn("1.50 m/min", window.realtime_page.scan_speed.text())
         self.assertIn("12345", window.realtime_page.chain_position.text())
         self.assertIn("xn_side", window.realtime_page.task_stage.text())
         self.assertEqual(3, window.workspace.count())
-        self.assertEqual(["实时控制", "设备控制", "设备配置"],
-                         [window.navigation.item(i).text() for i in range(window.navigation.count())])
+        self.assertEqual(["实时控制", "设备控制", "设备配置"], [window.navigation.item(i).text() for i in range(window.navigation.count())])
         for name in ("acquisition_page", "tasks_page", "logs_page"):
             self.assertFalse(hasattr(window, name))
         window.navigation.setCurrentRow(2)

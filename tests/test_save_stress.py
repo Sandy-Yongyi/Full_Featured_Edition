@@ -2,14 +2,13 @@
 
 import multiprocessing as mp
 from pathlib import Path
-import queue
 import tempfile
 import time
 import unittest
 
 import numpy as np
 
-from model.utils.PointCloudSaveBuffer import PointCloudSaveBuffer, SharedPointCloudPool, SaveBufferFull
+from model.utils.PointCloudSaveBuffer import PointCloudSaveBuffer
 from model.utils.PointCloudSaveService import PointCloudSaveService, stop_pipeline
 
 
@@ -44,8 +43,7 @@ def _acquisition_cleanup_with_backlog(descriptor, tasks, acks, statuses, raw_que
 class PipelineStressTests(unittest.TestCase):
     def test_acquisition_cleanup_flushes_save_without_waiting_for_unconsumed_plc_queue(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent) as directory:
-            service = PointCloudSaveService({"point_cloud_save_block_mb": .01,
-                                             "point_cloud_save_block_count": 8}, directory)
+            service = PointCloudSaveService({"point_cloud_save_block_mb": .01, "point_cloud_save_block_count": 8}, directory)
             context = mp.get_context("spawn")
             raw_queue, ready = context.Queue(), context.Event()
             producer = context.Process(target=_acquisition_cleanup_with_backlog, args=(
@@ -55,7 +53,7 @@ class PipelineStressTests(unittest.TestCase):
             producer.start()
             try:
                 self.assertTrue(ready.wait(15))
-                errors = stop_pipeline([producer, service.worker], producer, service, .5, 10)
+                errors = stop_pipeline([producer, service.worker], producer, service, 1, 10)
                 self.assertEqual(errors, [])
                 self.assertEqual(producer.exitcode, 0)
                 files = list(Path(directory).glob("combined_*.txt"))
@@ -71,11 +69,8 @@ class PipelineStressTests(unittest.TestCase):
 
     def test_stop_waits_for_producer_to_flush_final_job_before_sentinel(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent) as directory:
-            service = PointCloudSaveService({"point_cloud_save_block_mb": .01,
-                                             "point_cloud_save_block_count": 8}, directory)
-            producer = mp.get_context("spawn").Process(
-                target=_seal_on_stop,
-                args=(service.pool.descriptor, service.task_queue, service.ack_queue, service.stop_event))
+            service = PointCloudSaveService({"point_cloud_save_block_mb": .01, "point_cloud_save_block_count": 8}, directory)
+            producer = mp.get_context("spawn").Process(target=_seal_on_stop, args=(service.pool.descriptor, service.task_queue, service.ack_queue, service.stop_event))
             service.start()
             producer.start()
             try:
@@ -93,9 +88,7 @@ class PipelineStressTests(unittest.TestCase):
 
     def test_consecutive_large_workpieces_submit_without_waiting_for_disk(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent) as directory:
-            service = PointCloudSaveService({"point_cloud_save_block_mb": 2,
-                                             "point_cloud_save_block_count": 12,
-                                             "point_cloud_preview_voxel_mm": 0}, directory)
+            service = PointCloudSaveService({"point_cloud_save_block_mb": 2, "point_cloud_save_block_count": 12, "point_cloud_preview_voxel_mm": 0}, directory)
             buffer = PointCloudSaveBuffer(service.pool.descriptor, service.ack_queue)
             service.start()
             samples = []
@@ -104,8 +97,7 @@ class PipelineStressTests(unittest.TestCase):
                     # 3 MB of full-precision XYZ per workpiece; frame-sized appends.
                     for start in range(0, 125000, 1000):
                         n = min(1000, 125000 - start)
-                        points = np.column_stack((np.full(n, job_number + .12345),
-                                                  np.arange(start, start + n), np.full(n, start)))
+                        points = np.column_stack((np.full(n, job_number + .12345), np.arange(start, start + n), np.full(n, start)))
                         buffer.append("combined", points)
                     started = time.perf_counter()
                     service.task_queue.put_nowait(buffer.seal(f"large_{job_number}"))

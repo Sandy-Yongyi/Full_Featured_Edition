@@ -6,6 +6,7 @@ class DataFilter:
     '''
     点云滤波处理模块
     '''
+
     def points_to_pcd(self, points):
         '''
         将三维数组转成点云
@@ -25,10 +26,7 @@ class DataFilter:
         :return: 滤波后的点云数据
         '''
         pcd = self.points_to_pcd(points)
-        cl, ind = pcd.remove_statistical_outlier(
-            nb_neighbors=nb_neighbors,
-            std_ratio=std_ratio
-        )
+        cl, ind = pcd.remove_statistical_outlier(nb_neighbors=nb_neighbors, std_ratio=std_ratio)
         filtered_pcd = pcd.select_by_index(ind)
         return np.asarray(filtered_pcd.points)
 
@@ -53,12 +51,7 @@ class DataFilter:
             return np.empty((0, 2), dtype=np.float64)
 
         xy_points = points[:, :2]
-        mask = (
-            (xy_points[:, 0] >= x_min)
-            & (xy_points[:, 0] <= x_max)
-            & (xy_points[:, 1] >= y_min)
-            & (xy_points[:, 1] <= y_max)
-        )
+        mask = ((xy_points[:, 0] >= x_min) & (xy_points[:, 0] <= x_max) & (xy_points[:, 1] >= y_min) & (xy_points[:, 1] <= y_max))
 
         if not np.any(mask):
             return np.empty((0, 2), dtype=np.float64)

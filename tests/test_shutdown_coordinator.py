@@ -37,4 +37,3 @@ class ShutdownCoordinatorTests(unittest.TestCase):
         self.assertTrue(coordinator.request_stop())
         self.assertTrue(completed.wait(timeout=1))
         self.assertEqual([["PLC did not stop"]], results)
-

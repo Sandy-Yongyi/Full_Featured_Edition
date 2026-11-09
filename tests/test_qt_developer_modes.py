@@ -43,13 +43,14 @@ class DeveloperModesTests(unittest.TestCase):
         from PyQt6.QtWidgets import QApplication
         from qt_main import build_controller
         from view.qt.pages import RealtimeControlPage
-        app = QApplication.instance() or QApplication([])
+        qt_app = QApplication.instance() or QApplication([])
+        self.addCleanup(lambda: qt_app.processEvents())
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "sample.txt"
             path.write_text("0 0 0 255 0 0\n100 200 300 0 255 0\n", encoding="utf-8")
             with patch("control.QtPipelineRuntime.PlcCommunicationProcess.create") as plc, \
-                 patch("control.QtPipelineRuntime.LidarAcquisitionProcess") as lidar, \
-                 patch("control.QtPipelineRuntime.PointCloudSaveService.from_config_file") as saving:
+                    patch("control.QtPipelineRuntime.LidarAcquisitionProcess") as lidar, \
+                    patch("control.QtPipelineRuntime.PointCloudSaveService.from_config_file") as saving:
                 center = build_controller(control_type=3, data_path=str(path))
                 center._runtime.read_data_config["workpiece_origin_side"] = "left"
                 center.start()
@@ -99,8 +100,7 @@ class DeveloperModesTests(unittest.TestCase):
             contents = "100 10 0\n200 20 100\n"
             path.write_text(contents, encoding="utf-8")
             runtime = QtPipelineRuntime(self.configure(root), control_type=3, data_path=str(path))
-            runtime.read_data_config.update(translate_data_origin=1, workpiece_origin_side="right",
-                                            workpiece_origin_reference_x=1000)
+            runtime.read_data_config.update(translate_data_origin=1, workpiece_origin_side="right", workpiece_origin_reference_x=1000)
             runtime.start_pipeline()
             try:
                 deadline = time.monotonic() + 20
@@ -125,8 +125,8 @@ class DeveloperModesTests(unittest.TestCase):
                 path.write_text("0 0 0\n1 1 1\n", encoding="utf-8")
                 runtime = QtPipelineRuntime(self.configure(root, strategy), control_type=1, data_path=str(path))
                 with patch("multiprocessing.Process.start"), \
-                     patch("control.QtPipelineRuntime.LidarAcquisitionProcess") as lidar, \
-                     patch("control.QtPipelineRuntime.PointCloudSaveService.from_config_file") as saving:
+                        patch("control.QtPipelineRuntime.LidarAcquisitionProcess") as lidar, \
+                        patch("control.QtPipelineRuntime.PointCloudSaveService.from_config_file") as saving:
                     runtime.start_pipeline()
                 self.assertEqual(expected, len(runtime.processes))
                 self.assertEqual("DataProcessWorker", type(runtime.processes[0]).__name__)
@@ -221,7 +221,7 @@ class DeveloperModesTests(unittest.TestCase):
                 saver = Mock()
                 saver.pool.descriptor = {}
                 with patch("multiprocessing.Process.start"), \
-                     patch("control.QtPipelineRuntime.PointCloudSaveService.from_config_file", return_value=saver):
+                        patch("control.QtPipelineRuntime.PointCloudSaveService.from_config_file", return_value=saver):
                     runtime.start_pipeline()
                 self.assertEqual(expected, len(runtime.processes))
                 self.assertIs(saver.worker, runtime.processes[0])
@@ -238,8 +238,7 @@ class DeveloperModesTests(unittest.TestCase):
         args = parse_launch_arguments(["--control-type", "3", "--data-path", "cloud.txt"])
         self.assertEqual(3, args.control_type)
         self.assertEqual("cloud.txt", args.data_path)
-        for arguments in (["--control-type", "1"], ["--control-type", "3"],
-                          ["--data-path", "cloud.txt"], ["--control-type", "4"]):
+        for arguments in (["--control-type", "1"], ["--control-type", "3"], ["--data-path", "cloud.txt"], ["--control-type", "4"]):
             with self.subTest(arguments=arguments), contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit) as error:
                     parse_launch_arguments(arguments)
@@ -269,7 +268,8 @@ class DeveloperModesTests(unittest.TestCase):
         from PyQt6.QtWidgets import QApplication
         from qt_main import build_controller
         from view.qt.main_window import IndustrialMainWindow
-        app = QApplication.instance() or QApplication([])
+        qt_app = QApplication.instance() or QApplication([])
+        self.addCleanup(lambda: qt_app.processEvents())
         center = build_controller(control_type=3, data_path="unused.txt")
         window = IndustrialMainWindow(center)
         self.assertIn("只画图", window.windowTitle())
@@ -280,17 +280,18 @@ class DeveloperModesTests(unittest.TestCase):
 
     def test_all_modes_wait_for_manual_start_or_import(self):
         import qt_main
+        __import__("control.QtUiBridge")
         for control_type in (1, 2, 3):
             arguments = ["main.py"]
             if control_type != 2:
                 arguments += ["--control-type", str(control_type), "--data-path", "cloud.txt"]
             with self.subTest(control_type=control_type), \
-                 patch("sys.argv", arguments), \
-                 patch("qt_main.build_controller"), \
-                 patch("PyQt6.QtWidgets.QApplication") as application, \
-                 patch("PyQt6.QtCore.QTimer") as timer, \
-                 patch("control.QtUiBridge.QtUiBridge"), \
-                 patch("view.qt.main_window.IndustrialMainWindow") as window:
+                    patch("sys.argv", arguments), \
+                    patch("qt_main.build_controller"), \
+                    patch("PyQt6.QtWidgets.QApplication") as application, \
+                    patch("PyQt6.QtCore.QTimer") as timer, \
+                    patch("control.QtUiBridge.QtUiBridge"), \
+                    patch("view.qt.main_window.IndustrialMainWindow") as window:
                 application.instance.return_value.exec.return_value = 17
                 self.assertEqual(17, qt_main.main())
                 timer.singleShot.assert_not_called()

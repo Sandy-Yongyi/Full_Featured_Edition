@@ -11,6 +11,19 @@ from model.utils.PointCloudSaveBuffer import PointCloudSaveBuffer, SharedPointCl
 
 
 class AcquisitionSavingTests(unittest.TestCase):
+    def test_missing_buffer_is_reported_before_capturing(self):
+        self.process.save_buffer = None
+        with self.assertRaisesRegex(RuntimeError, "save buffer is not initialized"):
+            self.process._save_valid_data_core(0)
+
+    def test_missing_task_queue_does_not_seal_or_lose_buffer(self):
+        self.buffer.append("combined", np.ones((2, 3)))
+        self.process.save_task_queue = None
+        with self.assertRaisesRegex(RuntimeError, "task queue is not initialized"):
+            self.process._save_workpiece_data()
+        self.assertTrue(self.buffer.has_data)
+        self.assertEqual(0, self.buffer.pending_jobs)
+
     def setUp(self):
         self.pool = SharedPointCloudPool.create(2400, 12)
         self.acks = mp.get_context("spawn").Queue()

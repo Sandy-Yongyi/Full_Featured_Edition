@@ -5,6 +5,7 @@ class DataPartitionStatic:
     '''
     固定数据分区处理模块
     '''
+
     def find_boundary_layers_static(self, y_groups, upper_y, lower_y, x_middle, last_surface_edge):
         """
         找到每帧的最上边缘和最下边缘xyz坐标, 以及进行分区检测
@@ -22,9 +23,7 @@ class DataPartitionStatic:
             start_y, end_y = y_bounds[partition_id], y_bounds[partition_id+1]
             partition_layers = self._get_partition_layers(y_groups, start_y, end_y)
             prev_state = last_surface_edge[partition_id]
-            partition_params = self._calculate_partition_params(
-                partition_layers, x_middle, partition_id, prev_state
-            )
+            partition_params = self._calculate_partition_params(partition_layers, x_middle, partition_id, prev_state)
             x_max = max(x_max, partition_params["x_max"])
             x_min = min(x_min, partition_params["x_min"])
             partitions.append(partition_params)

@@ -92,8 +92,7 @@ class IndustrialMainWindow(QMainWindow):
     def apply_state(self, state: UiState) -> None:
         self._last_state = state
         self._set_alarm_text("\n".join(dict.fromkeys(state.alarms)))
-        header = (("● 系统停止中", "#ffb351") if state.stopping else
-                  (f"● {state.chain_status}", "#2bd49d") if state.running else ("● 系统待机", MUTED))
+        header = (("● 系统停止中", "#ffb351") if state.stopping else (f"● {state.chain_status}", "#2bd49d") if state.running else ("● 系统待机", MUTED))
         if header != self._last_header:
             self.system_status.setText(header[0])
             self.system_status.setStyleSheet(f"color: {header[1]};")
@@ -116,7 +115,10 @@ class IndustrialMainWindow(QMainWindow):
         lines = tuple(self._last_state.alarms) + (f"{title}：{detail}",)
         self._set_alarm_text("\n".join(dict.fromkeys(lines)))
 
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, a0) -> None:
+        event = a0
+        if event is None:
+            return
         if not self._close_authorized:
             if not authorize(self, self.controller):
                 event.ignore()

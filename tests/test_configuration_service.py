@@ -33,4 +33,3 @@ class ConfigurationServiceTests(unittest.TestCase):
 
             self.assertEqual("123456", service.get_configured_password())
             self.assertFalse(service.is_password_required())
-

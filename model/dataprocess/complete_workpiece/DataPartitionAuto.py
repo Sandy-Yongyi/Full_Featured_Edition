@@ -5,6 +5,7 @@ class DataPartitionAuto:
     '''
     自动化分区处理模块
     '''
+
     def find_boundary_layers_auto(self, y_groups, upper_y, lower_y, x_threshold, last_surface_edge, outside_x_max, outside_x_min, inside_partition_min_y_range=50):
         """
         自动进行分区检测:
@@ -50,24 +51,12 @@ class DataPartitionAuto:
 
             if current_min_x >= x_threshold:
                 if current_partition is None:
-                    current_partition = self._create_partition(
-                        start_index=i,
-                        start_y=current_min_y,
-                        end_y=current_max_y,
-                        x_max=current_min_x,
-                        is_no_back=False,
-                    )
+                    current_partition = self._create_partition(start_index=i, start_y=current_min_y, end_y=current_max_y, x_max=current_min_x, is_no_back=False,)
                 else:
                     if current_partition.get("is_no_back", False):
                         current_partition["end_index"] = max(i - 1, current_partition.get("start_index", i))
                         merge_partitions = self._finalize_current_partition(x_min, current_partition, merge_partitions, reversed_y_groups)
-                        current_partition = self._create_partition(
-                            start_index=i,
-                            start_y=current_min_y,
-                            end_y=current_max_y,
-                            x_max=current_min_x,
-                            is_no_back=False,
-                        )
+                        current_partition = self._create_partition(start_index=i, start_y=current_min_y, end_y=current_max_y, x_max=current_min_x, is_no_back=False,)
                     else:
                         # 更新分区信息
                         current_partition["end_y"] = current_max_y
@@ -75,13 +64,7 @@ class DataPartitionAuto:
 
             if current_min_y - next_max_y > 200:  # 考虑背板是镂空
                 if current_partition is None:
-                    current_partition = self._create_partition(
-                        start_index=i,
-                        start_y=current_min_y,
-                        end_y=next_max_y,
-                        x_max=outside_x_max,
-                        is_no_back=True,
-                    )
+                    current_partition = self._create_partition(start_index=i, start_y=current_min_y, end_y=next_max_y, x_max=outside_x_max, is_no_back=True,)
                 else:
                     if current_partition.get("is_no_back", False):
                         current_partition["end_y"] = next_max_y
@@ -89,13 +72,7 @@ class DataPartitionAuto:
                     else:
                         current_partition["end_index"] = max(i - 1, current_partition.get("start_index", i))
                         merge_partitions = self._finalize_current_partition(x_min, current_partition, merge_partitions, reversed_y_groups)
-                        current_partition = self._create_partition(
-                            start_index=i,
-                            start_y=current_min_y,
-                            end_y=next_max_y,
-                            x_max=outside_x_max,
-                            is_no_back=True,
-                        )
+                        current_partition = self._create_partition(start_index=i, start_y=current_min_y, end_y=next_max_y, x_max=outside_x_max, is_no_back=True,)
 
             if current_min_x < x_threshold and current_min_y - next_max_y <= 200:
                 if current_partition is not None:
@@ -115,13 +92,7 @@ class DataPartitionAuto:
         return (x_max, x_min, None, merge_partitions)
 
     def _create_partition(self, start_index, start_y, end_y, x_max, is_no_back):
-        return {
-            "start_index": start_index,
-            "start_y": start_y,
-            "end_y": end_y,
-            "x_max": x_max,
-            "is_no_back": is_no_back,
-        }
+        return {"start_index": start_index, "start_y": start_y, "end_y": end_y, "x_max": x_max, "is_no_back": is_no_back, }
 
     def _find_boundary_edges(self, y_groups, lower_y, upper_y):
         """查找lower_layer和upper_layer"""

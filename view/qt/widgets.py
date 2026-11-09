@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout
+from PyQt6.QtWidgets import QFrame, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout
 
 from view.qt import theme
 
@@ -8,13 +8,13 @@ class Panel(QFrame):
     def __init__(self, title: str | None = None, parent=None):
         super().__init__(parent)
         self.setObjectName("panel")
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(*(theme.ui_px(14),) * 4)
-        self.layout.setSpacing(theme.ui_px(10))
+        self.content_layout = QVBoxLayout(self)
+        self.content_layout.setContentsMargins(*(theme.ui_px(14),) * 4)
+        self.content_layout.setSpacing(theme.ui_px(10))
         if title:
             label = QLabel(title)
             label.setStyleSheet(f"font-weight: 700; color: {theme.TEXT};")
-            self.layout.addWidget(label)
+            self.content_layout.addWidget(label)
 
 
 class StatusBadge(QLabel):
@@ -53,13 +53,17 @@ class RuntimeLogView(QPlainTextEdit):
         if entries == self._logs:
             return
         scrollbar = self.verticalScrollBar()
+        if scrollbar is None:
+            return
         old_scroll = scrollbar.value()
         follow_tail = old_scroll >= scrollbar.maximum()
         old = self._logs
         overlap = min(len(old), len(entries))
         while overlap and old[-overlap:] != entries[:overlap]:
             overlap -= 1
-        format_event = lambda event: f"[{event.level}] {event.message}"
+
+        def format_event(event):
+            return f"[{event.level}] {event.message}"
         editor = QTextCursor(self.document())
         editor.beginEditBlock()
         removed = old[:len(old) - overlap] if overlap else old

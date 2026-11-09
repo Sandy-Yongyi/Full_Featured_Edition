@@ -11,12 +11,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from typing import Dict
 from model.utils.LoggerUtil import logger
-from model.utils.StrategyUtil import (
-    COMPLETE_WORKPIECE_STRATEGY,
-    CONTINUOUS_BIDIRECTIONAL_STRATEGY,
-    FRAME_QUEUE_STRATEGY,
-    validate_strategy_name,
-)
+from model.utils.StrategyUtil import (COMPLETE_WORKPIECE_STRATEGY, CONTINUOUS_BIDIRECTIONAL_STRATEGY, FRAME_QUEUE_STRATEGY, validate_strategy_name,)
 
 
 class AcquisitionStrategy(ABC):
@@ -26,37 +21,37 @@ class AcquisitionStrategy(ABC):
         self.config = config
 
     @abstractmethod
-    def monitor_movement(self, process_instance):
+    def monitor_movement(self, proc):
         """监测运动并采集数据"""
         pass
 
     @abstractmethod
-    def update_scanning_state(self, process_instance, direction: str, state, same_origin_filtered, diff_origin_filtered):
+    def update_scanning_state(self, proc, direction: str, state, same_origin_filtered, diff_origin_filtered):
         """更新扫描状态"""
         pass
 
     @abstractmethod
-    def save_valid_data(self, process_instance):
+    def save_valid_data(self, proc):
         """保存有效数据"""
         pass
 
     @abstractmethod
-    def check_scanning_completion(self, process_instance):
+    def check_scanning_completion(self, proc):
         """检查扫描是否完成"""
         pass
 
     @abstractmethod
-    def send_raw_data(self, process_instance):
+    def send_raw_data(self, proc):
         """发送原始数据"""
         pass
 
     @abstractmethod
-    def send_direction_data(self, process_instance, direction_data: Dict):
+    def send_direction_data(self, proc, direction_data: Dict):
         """发送方向数据（逐帧发送）"""
         pass
 
     @abstractmethod
-    def reset_for_next_workpiece(self, process_instance):
+    def reset_for_next_workpiece(self, proc):
         """重置为下一个工件"""
         pass
 
@@ -155,10 +150,7 @@ class ContinuousBidirectionalStrategy(AcquisitionStrategy):
             return
         # 直接向PLC进程发送整趟XYZ点云，不经过分区处理。
         same_origin = int(proc.read_data_config["translate_data_origin"]) == 1
-        raw_data = {
-            "lidar_status": proc.lidar_status,
-            "translate_data_origin": int(proc.read_data_config["translate_data_origin"]),
-        }
+        raw_data = {"lidar_status": proc.lidar_status, "translate_data_origin": int(proc.read_data_config["translate_data_origin"]), }
         directions = set(proc.lidar_config)
         if same_origin:
             directions.update(("left", "right"))
@@ -257,10 +249,7 @@ class FrameByFrameStrategy(AcquisitionStrategy):
 
         # ---- 首启动检测：判断是否需要进入跳过模式 ----
         if proc.software_first_start and not proc.fbf_skipping_workpiece and not proc.fbf_skip_complete:
-            has_data = any(
-                isinstance(darr, np.ndarray) and darr.size > 0
-                for darr in direction_data.values()
-            )
+            has_data = any(isinstance(darr, np.ndarray) and darr.size > 0 for darr in direction_data.values())
             if has_data and proc.start_motion_pulse is not None:
                 pulse_diff = proc._get_forward_pulse_diff(proc.start_motion_pulse, proc.current_pulse)
                 moved_mm = pulse_diff / proc.read_data_config["pulse_to_mm"]
@@ -276,11 +265,7 @@ class FrameByFrameStrategy(AcquisitionStrategy):
 
         # ---- 跳过模式：不发送帧，等待工件离开（连续100帧空数据） ----
         if proc.fbf_skipping_workpiece:
-            all_empty = all(
-                (darr is None) or (isinstance(darr, np.ndarray) and darr.size == 0)
-                or (isinstance(darr, list) and len(darr) == 0)
-                for darr in direction_data.values()
-            )
+            all_empty = all((darr is None) or (isinstance(darr, np.ndarray) and darr.size == 0) or (isinstance(darr, list) and len(darr) == 0) for darr in direction_data.values())
             if all_empty:
                 proc.fbf_empty_frame_count += 1
                 if proc.fbf_empty_frame_count >= 100:
@@ -294,10 +279,7 @@ class FrameByFrameStrategy(AcquisitionStrategy):
 
         # ---- 跳过完成，等待新工件数据才恢复发送 ----
         if proc.fbf_skip_complete:
-            has_data = any(
-                isinstance(darr, np.ndarray) and darr.size > 0
-                for darr in direction_data.values()
-            )
+            has_data = any(isinstance(darr, np.ndarray) and darr.size > 0 for darr in direction_data.values())
             if has_data:
                 proc.fbf_skip_complete = False
                 proc.software_first_start = False
@@ -379,10 +361,7 @@ class CompleteWorkpieceStrategy(AcquisitionStrategy):
     def send_raw_data(self, proc):
         """发送完整工件数据（对应LidarAcquisitionProcess2的_send_raw_data）"""
         translate_data_origin = int(proc.read_data_config.get("translate_data_origin", 2) or 2)
-        raw_data = {
-            "lidar_status": proc.lidar_status,
-            "translate_data_origin": translate_data_origin,
-        }
+        raw_data = {"lidar_status": proc.lidar_status, "translate_data_origin": translate_data_origin, }
 
         direction_stop_pulses = {}
         valid_stop_pulses = []
@@ -444,10 +423,7 @@ class CompleteWorkpieceStrategy(AcquisitionStrategy):
         if proc.start_motion_pulse is None:
             return
 
-        has_data = any(
-            isinstance(darr, np.ndarray) and darr.size > 0
-            for darr in direction_data.values()
-        )
+        has_data = any(isinstance(darr, np.ndarray) and darr.size > 0 for darr in direction_data.values())
         if not has_data:
             return
 
@@ -456,17 +432,11 @@ class CompleteWorkpieceStrategy(AcquisitionStrategy):
         start_skip_mm = float(proc.read_data_config.get("start_skip_mm", 0) or 0)
         if moved_mm <= start_skip_mm:
             proc.complete_skip_current_workpiece = True
-            logger.info(
-                f"[CompleteWorkpiece StartupGuard] Workpiece in middle detected, skip current workpiece. "
-                f"moved_mm={moved_mm:.1f}, start_skip_mm={start_skip_mm:.1f}"
-            )
+            logger.info(f"[CompleteWorkpiece StartupGuard] Workpiece in middle detected, skip current workpiece. " f"moved_mm={moved_mm:.1f}, start_skip_mm={start_skip_mm:.1f}")
             return
 
         proc.software_first_start = False
-        logger.info(
-            f"[CompleteWorkpiece StartupGuard] Normal start beyond skip zone. "
-            f"moved_mm={moved_mm:.1f}, start_skip_mm={start_skip_mm:.1f}"
-        )
+        logger.info(f"[CompleteWorkpiece StartupGuard] Normal start beyond skip zone. " f"moved_mm={moved_mm:.1f}, start_skip_mm={start_skip_mm:.1f}")
 
     def reset_for_next_workpiece(self, proc):
         """重置状态"""

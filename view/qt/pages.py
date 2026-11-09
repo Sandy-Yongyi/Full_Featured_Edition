@@ -53,15 +53,15 @@ class RealtimeControlPage(QWidget):
         self.task_name = QLabel("等待任务")
         self.task_progress = QProgressBar()
         self.task_stage = QLabel("待机")
-        task_panel.layout.addWidget(self.task_name)
-        task_panel.layout.addWidget(self.task_progress)
-        task_panel.layout.addWidget(self.task_stage)
+        task_panel.content_layout.addWidget(self.task_name)
+        task_panel.content_layout.addWidget(self.task_progress)
+        task_panel.content_layout.addWidget(self.task_stage)
         bottom = QHBoxLayout()
         bottom.addWidget(task_panel, 1)
         event_panel = Panel("最近事件")
         self.recent_events = RuntimeLogView()
         self.recent_events.setMaximumHeight(theme.ui_px(110))
-        event_panel.layout.addWidget(self.recent_events)
+        event_panel.content_layout.addWidget(self.recent_events)
         bottom.addWidget(event_panel, 2)
         center.addLayout(bottom)
         root.addLayout(center, 1)
@@ -80,7 +80,7 @@ class RealtimeControlPage(QWidget):
         self.start_button.clicked.connect(self._start)
         self.stop_button.clicked.connect(self._stop)
         for widget in (self.chain_position, self.chain_status, self.scan_speed, self.start_button, self.stop_button):
-            chain_panel.layout.addWidget(widget)
+            chain_panel.content_layout.addWidget(widget)
         side.addWidget(chain_panel)
 
         device_panel = Panel("设备联锁")
@@ -88,7 +88,7 @@ class RealtimeControlPage(QWidget):
         self.lidar_badge = StatusBadge("激光未就绪")
         self.servo_badge = StatusBadge("伺服未就绪")
         for widget in (self.plc_badge, self.lidar_badge, self.servo_badge):
-            device_panel.layout.addWidget(widget)
+            device_panel.content_layout.addWidget(widget)
         side.addWidget(device_panel)
         side.addStretch(1)
         root.addLayout(side)
@@ -146,7 +146,7 @@ class DeviceControlPage(QWidget):
         self.enable_button = ControlButton("设备总使能")
         self.enable_button.setCheckable(True)
         self.enable_button.clicked.connect(self._send)
-        panel.layout.addWidget(self.enable_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        panel.content_layout.addWidget(self.enable_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.device_grid = QGridLayout()
         self.device_grid.setHorizontalSpacing(theme.ui_px(20))
         self.device_grid.setVerticalSpacing(theme.ui_px(10))
@@ -162,10 +162,10 @@ class DeviceControlPage(QWidget):
             button.clicked.connect(self._send)
             self.device_buttons.append(button)
             self.device_grid.addWidget(button, index % 3 + 1, index // 3)
-        panel.layout.addLayout(self.device_grid)
+        panel.content_layout.addLayout(self.device_grid)
         self.result = QLabel("等待 PLC 通讯")
         self.result.setWordWrap(True)
-        panel.layout.addWidget(self.result)
+        panel.content_layout.addWidget(self.result)
         layout.addWidget(panel)
         layout.addStretch(1)
         self._sync()
@@ -261,8 +261,9 @@ class DeviceConfigurationPage(QWidget):
         self.device_buttons = {}
         while self.device_grid.count():
             item = self.device_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
         self._config_loaded = False
         self.tabs.clear()
         self.fields = {}
@@ -326,8 +327,7 @@ class DeviceConfigurationPage(QWidget):
         self._config_loaded = bool(self.fields)
         preview = getattr(self.controller, "preview_mode", False)
         self._sync_edit_controls()
-        self.save_result.setText("预览模式：设备参数只读，不会写入生产配置。" if preview else
-                                 "参数可直接修改，点击保存时验证密码（如已开启）。")
+        self.save_result.setText("预览模式：设备参数只读，不会写入生产配置。" if preview else "参数可直接修改，点击保存时验证密码（如已开启）。")
 
     def _sync_edit_controls(self) -> None:
         preview = getattr(self.controller, "preview_mode", False)
@@ -373,7 +373,9 @@ class DeviceConfigurationPage(QWidget):
             current = (self._loaded_sn, self._loaded_strategy, tuple(self.fields.values()), tuple(self.flat_fields.values()))
             if self._stopping or target != current or self._loaded_sn != self.selected_device_sn or self._loaded_strategy != self.strategy_name:
                 raise ValueError("运行或设备状态已改变，请重新选择设备后保存")
-            values = {key: int(field.text().strip()) for key, field in self.fields.items()}
+            if self._loaded_sn is None:
+                raise ValueError("尚未选择设备")
+            values: dict[str, int | dict[str, int]] = {key: int(field.text().strip()) for key, field in self.fields.items()}
             if self.flat_fields:
                 values["flat"] = {key: int(field.text().strip()) for key, field in self.flat_fields.items()}
             control_queue = getattr(self.controller, "control_queue", None)

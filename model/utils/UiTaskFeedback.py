@@ -16,10 +16,7 @@ def _frame_task_feedback(process) -> TaskState:
     fifo = getattr(getattr(process, "plc_data", None), "ChainCountCM", None)
     timeout = getattr(process, "raw_data_timeout_active", None)
     input_status = "原始数据超时" if timeout else ("未触发超时" if timeout is not None else "待反馈")
-    details = [
-        TaskDetailState("链条 FIFO", str(fifo) if fifo is not None else "待反馈"),
-        TaskDetailState("原始数据输入", input_status),
-    ]
+    details = [TaskDetailState("链条 FIFO", str(fifo) if fifo is not None else "待反馈"), TaskDetailState("原始数据输入", input_status),]
     stacks = getattr(getattr(process, "frame_queue_manager", None), "frame_stack", {})
     directions = {"left": "左侧", "right": "右侧", "left_upper": "左上", "right_upper": "右上"}
     for direction, stack in stacks.items():
@@ -27,8 +24,7 @@ def _frame_task_feedback(process) -> TaskState:
         # Counting slots must not be presented as a count of valid workpieces.
         details.append(TaskDetailState(f"{directions.get(direction, direction)}缓存", "已建立",
                                        f"{len(stack)} 个槽位（含空帧）"))
-    return TaskState(name="逐帧联动喷涂", stage="原始数据超时" if timeout else "帧队列联动",
-                     details=tuple(details))
+    return TaskState(name="逐帧联动喷涂", stage="原始数据超时" if timeout else "帧队列联动", details=tuple(details))
 
 
 def _continuous_task_feedback(process) -> TaskState:
@@ -38,7 +34,7 @@ def _continuous_task_feedback(process) -> TaskState:
         "scanning": "往复扫描中", "complete": "本趟扫描完成", "retry_wait": "等待重采确认",
         "retry_position": "重采定位中", "fault": "扫描故障",
     }
-    stage = scan_stages.get(getattr(scan, "stage", None), "扫描阶段待反馈")
+    stage = scan_stages.get(getattr(scan, "stage", ""), "扫描阶段待反馈")
     details = [TaskDetailState("扫描状态", stage, getattr(scan, "error", ""))]
     manager = getattr(process, "frame_queue_manager", None)
     phases = getattr(manager, "continuous_phases", ())
@@ -48,9 +44,8 @@ def _continuous_task_feedback(process) -> TaskState:
         phase = phases[index] if index < len(phases) else None
         # Inspect references only: no copying, iterating, or truth-testing arrays.
         slots = [stack[index] for stack in stacks.values() if index < len(stack)]
-        occupied = ("有点云数据" if any(slot is not None for slot in slots) else
-                    ("无点云数据" if slots and len(slots) == len(stacks) else "点云占用待反馈"))
-        details.append(TaskDetailState(name, phase_names.get(phase, "待反馈"), occupied))
+        occupied = ("有点云数据" if any(slot is not None for slot in slots) else ("无点云数据" if slots and len(slots) == len(stacks) else "点云占用待反馈"))
+        details.append(TaskDetailState(name, phase_names.get(phase or "", "待反馈"), occupied))
     return TaskState(name="往复采集与工位流转", stage=stage, details=tuple(details))
 
 
@@ -63,7 +58,7 @@ def build_task_summary(process) -> TaskState:
         stages = {"startup": "扫描初始化", "homing": "扫描轴回零", "waiting": "等待扫描",
                   "scanning": "往复扫描中", "complete": "本趟扫描完成", "retry_wait": "等待重采确认",
                   "retry_position": "重采定位中", "fault": "扫描故障"}
-        return TaskState(name="往复采集与工位流转", stage=stages.get(getattr(scan, "stage", None), "扫描阶段待反馈"))
+        return TaskState(name="往复采集与工位流转", stage=stages.get(getattr(scan, "stage", ""), "扫描阶段待反馈"))
     planner = getattr(getattr(process, "complete_workpiece_planner", None), "xn_side_planner", None)
     states = getattr(planner, "_work_states", {})
     queues = getattr(getattr(process, "frame_queue_manager", None), "queues", {})
