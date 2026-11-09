@@ -60,7 +60,7 @@ def main(*, control_type=2, data_path=None, data_name=None) -> int:
     bridge = QtUiBridge(controller)
     window = IndustrialMainWindow(controller, bridge)
     window.showMaximized()
-    bridge.start(100)
+    bridge.start()
     return app.exec()
 
 

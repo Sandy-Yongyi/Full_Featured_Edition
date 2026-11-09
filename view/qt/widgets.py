@@ -9,8 +9,8 @@ class Panel(QFrame):
         super().__init__(parent)
         self.setObjectName("panel")
         self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(14, 14, 14, 14)
-        self.layout.setSpacing(10)
+        self.layout.setContentsMargins(*(theme.ui_px(14),) * 4)
+        self.layout.setSpacing(theme.ui_px(10))
         if title:
             label = QLabel(title)
             label.setStyleSheet(f"font-weight: 700; color: {theme.TEXT};")
@@ -26,7 +26,7 @@ class StatusBadge(QLabel):
     def set_status(self, text: str, online: bool) -> None:
         color = theme.GREEN if online else theme.MUTED
         self.setText(f"● {text}")
-        self.setStyleSheet(f"color: {color}; font-size: 12px;")
+        self.setStyleSheet(f"color: {color}; font-size: {theme.ui_px(12)}px;")
 
 
 class ControlButton(QPushButton):

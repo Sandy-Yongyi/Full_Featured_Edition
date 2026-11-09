@@ -276,7 +276,6 @@ class DeveloperModesTests(unittest.TestCase):
         self.assertIn("导入 TXT", window.realtime_page.start_button.text())
         self.assertIn("停止查看", window.realtime_page.stop_button.text())
         self.assertFalse(window.configuration_page.save_button.isEnabled())
-        self.assertFalse(window.acquisition_page.save_speed_button.isEnabled())
         self.assertFalse(center.is_password_required())
 
     def test_all_modes_wait_for_manual_start_or_import(self):

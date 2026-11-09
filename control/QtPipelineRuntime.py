@@ -268,6 +268,8 @@ class QtPipelineRuntime:
         if self.control_type == 1:
             lidar_online, lidar_detail = False, "TXT 联调 · 不启用激光"
         plc_feedback = self._ui_feedback.get("plc", {})
+        snapshot["chain_speed_mm_s"] = float(plc_feedback["chain_speed_mm_s"]) if plc_online and "chain_speed_mm_s" in plc_feedback else None
+        snapshot["device_enable_mask"] = int(plc_feedback.get("device_enable_mask", 0)) if plc_online else 0
         feedback_task = plc_feedback.get("task")
         snapshot["task"] = feedback_task if plc_online and isinstance(feedback_task, TaskState) else TaskState(stage="等待 PLC 任务反馈" if self.running else "待机")
         if plc_online:

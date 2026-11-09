@@ -18,6 +18,25 @@ class FakeController:
 
 
 class IndustrialMainWindowTests(unittest.TestCase):
+    def test_all_pages_refresh_even_when_hidden(self):
+        from control.UiState import UiState
+        from view.qt.main_window import IndustrialMainWindow
+        window = IndustrialMainWindow(FakeController())
+        state = UiState(strategy_name='frame_by_frame', chain_position=987)
+        with patch.object(window.realtime_page, 'apply_state') as realtime, \
+             patch.object(window.device_control_page, 'apply_state') as devices, \
+             patch.object(window.configuration_page, 'apply_state') as config:
+            window.apply_state(state)
+            realtime.assert_called_once_with(state)
+            devices.assert_called_once_with(state)
+            config.assert_called_once_with(state)
+            window.navigation.setCurrentRow(2)
+            config.assert_called_once_with(state)
+            window.apply_state(state)
+            self.assertEqual(2, realtime.call_count)
+            self.assertEqual(2, devices.call_count)
+            self.assertEqual(2, config.call_count)
+
     def test_startup_error_is_displayed_without_escaping_qt_slot(self):
         from view.qt.main_window import IndustrialMainWindow
 
@@ -39,7 +58,7 @@ class IndustrialMainWindowTests(unittest.TestCase):
         window = IndustrialMainWindow(controller=FakeController())
         self.assertEqual(
             window.route_names(),
-            ("realtime", "acquisition", "tasks", "configuration", "logs"),
+            ("realtime", "device_control", "configuration"),
         )
 
     def test_running_state_keeps_stop_enabled(self):
@@ -60,15 +79,22 @@ class IndustrialMainWindowTests(unittest.TestCase):
         state = UiState(
             strategy_name="complete_workpiece",
             chain_speed=31,
+            chain_speed_mm_s=25,
             chain_position=12345,
             task=TaskState("柜体自动喷涂", "xn_side 分枪", 75, 6, 8),
         )
         window.apply_state(state)
 
-        self.assertEqual(31, window.acquisition_page.speed_spin.value())
-        self.assertIn("12345", window.acquisition_page.position_value.text())
-        self.assertIn("xn_side", window.tasks_page.stage_value.text())
-        self.assertEqual(0, window.tasks_page.gun_table.rowCount())
+        self.assertIn("1.50 m/min", window.realtime_page.scan_speed.text())
+        self.assertIn("12345", window.realtime_page.chain_position.text())
+        self.assertIn("xn_side", window.realtime_page.task_stage.text())
+        self.assertEqual(3, window.workspace.count())
+        self.assertEqual(["实时控制", "设备控制", "设备配置"],
+                         [window.navigation.item(i).text() for i in range(window.navigation.count())])
+        for name in ("acquisition_page", "tasks_page", "logs_page"):
+            self.assertFalse(hasattr(window, name))
+        window.navigation.setCurrentRow(2)
+        self.assertIs(window.workspace.currentWidget(), window.configuration_page)
         self.assertIsNotNone(window.configuration_page.tabs)
 
     def test_header_status_follows_runtime_state(self):

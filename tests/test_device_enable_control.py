@@ -1,0 +1,65 @@
+import unittest
+import queue
+from types import SimpleNamespace
+
+
+class DeviceEnableTests(unittest.TestCase):
+    def test_worker_interlock_and_command_frame(self):
+        from control.PlcCommunicationProcess import PlcCommunicationProcess
+        from model.plc.MovingFrameData import SendMovingFrameData
+        p = PlcCommunicationProcess.__new__(PlcCommunicationProcess)
+        p.control_queue = queue.Queue()
+        p.control_queue.put({'device_enable_mask': 126})
+        p._update_enable_value()
+        self.assertEqual(0, p.device_enable_mask)
+        p.control_queue.put({'device_enable_mask': 127})
+        p._update_enable_value()
+        self.assertEqual(127, p.device_enable_mask)
+        frame = p._apply_device_enable(SendMovingFrameData(Enable=1))
+        self.assertEqual(127, frame.Enable)
+        p.control_queue.put({'device_enable_mask': 0})
+        p._update_enable_value()
+        self.assertEqual(0, p._apply_device_enable(frame).Enable)
+
+    def test_controller_rejects_offline_commands(self):
+        from control.ControlCenter import ControlCenter
+        from control.UiState import DeviceState
+        sent = []
+        center = ControlCenter(SimpleNamespace(control_type=2), 'complete_workpiece', send_control=sent.append)
+        with self.assertRaises(RuntimeError):
+            center.set_device_enable_mask(127)
+        center._state = center._replace_state(running=True, devices=(DeviceState('PLC', True),))
+        center.set_device_enable_mask(126)
+        self.assertEqual([{'device_enable_mask': 0}], sent)
+        center.set_device_enable_mask(3)
+        self.assertEqual({'device_enable_mask': 3}, sent[-1])
+
+    def test_speed_uses_live_chain_feedback_and_page_interlock(self):
+        from PyQt6.QtWidgets import QApplication
+        from control.UiState import UiState, DeviceState
+        from view.qt.pages import RealtimeControlPage, DeviceControlPage
+        app = QApplication.instance() or QApplication([])
+        sent = []
+        controller = SimpleNamespace(set_device_enable_mask=sent.append)
+        realtime = RealtimeControlPage(controller)
+        realtime.apply_state(UiState(strategy_name='complete_workpiece', chain_speed_mm_s=25))
+        self.assertIn('1.50 m/min', realtime.scan_speed.text())
+        page = DeviceControlPage(controller)
+        state = UiState(strategy_name='complete_workpiece', running=True,
+                        devices=(DeviceState('PLC', True),))
+        page.apply_state(state)
+        self.assertTrue(all(not b.isEnabled() for b in page.device_buttons))
+        for index, button in enumerate(page.device_buttons):
+            self.assertIs(page.device_grid.itemAtPosition(index % 3 + 1, index // 3).widget(), button)
+            button.click()
+        self.assertEqual([], sent)
+        page.enable_button.click()
+        self.assertEqual(1, sent[-1])
+        page.device_buttons[0].click()
+        self.assertEqual(3, sent[-1])
+        page.enable_button.click()
+        self.assertEqual(0, sent[-1])
+        self.assertTrue(all(not b.isChecked() and not b.isEnabled() for b in page.device_buttons))
+        for button in page.device_buttons:
+            button.click()
+        self.assertEqual(0, sent[-1])

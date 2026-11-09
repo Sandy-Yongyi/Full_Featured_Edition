@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QCheckBox, QComboBox, QFormLayout, QHeaderView, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QScrollArea, QSpinBox, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QScrollArea, QTabWidget, QVBoxLayout, QWidget
 
 from control.UiState import UiState
 from view.qt.point_cloud_view import QtPointCloudView
@@ -24,7 +24,7 @@ class RealtimeControlPage(QWidget):
         self._last_scene_boxes = object()
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(10)
+        root.setSpacing(theme.ui_px(10))
 
         center = QVBoxLayout()
         self.point_cloud_view = QtPointCloudView()
@@ -60,7 +60,7 @@ class RealtimeControlPage(QWidget):
         bottom.addWidget(task_panel, 1)
         event_panel = Panel("最近事件")
         self.recent_events = RuntimeLogView()
-        self.recent_events.setMaximumHeight(110)
+        self.recent_events.setMaximumHeight(theme.ui_px(110))
         event_panel.layout.addWidget(self.recent_events)
         bottom.addWidget(event_panel, 2)
         center.addLayout(bottom)
@@ -68,10 +68,10 @@ class RealtimeControlPage(QWidget):
 
         side = QVBoxLayout()
         chain_panel = Panel("生产控制")
-        chain_panel.setMinimumWidth(230)
+        chain_panel.setMinimumWidth(theme.ui_px(230))
         self.chain_position = QLabel("当前位置  0 pulse")
         self.chain_status = QLabel("待机")
-        self.scan_speed = QLabel("扫描速度  25 mm/s")
+        self.scan_speed = QLabel("链条运动速度  待反馈")
         self.start_button = ControlButton("▶  启动自动喷涂", "primary")
         self.stop_button = ControlButton("■  安全停止", "danger")
         if getattr(controller, "control_type", 2) == 3:
@@ -110,7 +110,8 @@ class RealtimeControlPage(QWidget):
     def apply_state(self, state: UiState) -> None:
         self.chain_position.setText(f"当前位置  {state.chain_position} pulse")
         self.chain_status.setText(state.chain_status)
-        self.scan_speed.setText(f"扫描速度  {state.chain_speed} mm/s")
+        speed = "待反馈" if state.chain_speed_mm_s is None else f"{state.chain_speed_mm_s * 0.06:.2f} m/min"
+        self.scan_speed.setText(f"链条运动速度  {speed}")
         self.start_button.setEnabled(not state.running and not state.stopping)
         self.stop_button.setEnabled(state.running and not state.stopping)
         self.task_name.setText(state.task.name)
@@ -132,145 +133,87 @@ class RealtimeControlPage(QWidget):
             badge.set_status(f"{name} · {device.detail if device else '未连接'}", bool(device and device.online))
 
 
-class PlaceholderPage(QWidget):
-    def __init__(self, title: str, description: str, parent=None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(22, 22, 22, 22)
-        panel = Panel(title)
-        text = QLabel(description)
-        text.setWordWrap(True)
-        text.setStyleSheet(f"color: {theme.MUTED}; font-size: 14px;")
-        panel.layout.addWidget(text)
-        panel.layout.addStretch(1)
-        layout.addWidget(panel, 1)
-
-
-class AcquisitionPage(QWidget):
-    """Inline scan status and speed settings, without a separate wx dialog."""
+class DeviceControlPage(QWidget):
+    DEVICE_NAMES = ("左侧内外顶", "左侧内外底", "左侧二维", "右侧内外顶", "右侧内外底", "右侧二维")
 
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller
-        self._last_speed = None
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        summary = Panel("点云采集")
-        self.position_value = QLabel("链条位置  0 pulse")
-        self.status_value = QLabel("等待采集")
-        self.preview_value = QLabel("预览数据将在采集后显示")
-        for widget in (self.position_value, self.status_value, self.preview_value):
-            summary.layout.addWidget(widget)
-        summary.layout.addStretch(1)
-        layout.addWidget(summary, 2)
-
-        settings = Panel("采集参数")
-        form = QFormLayout()
-        self.speed_spin = QSpinBox()
-        self.speed_spin.setRange(1, 50)
-        self.speed_spin.setSuffix(" mm/s")
-        self.save_speed_button = ControlButton("保存扫描速度", "primary")
-        self.save_speed_button.clicked.connect(self._save_speed)
-        self.save_result = QLabel("")
-        if getattr(controller, "preview_mode", False):
-            self.speed_spin.setReadOnly(True)
-            self.save_speed_button.setEnabled(False)
-            self.save_result.setText("预览模式：扫描参数只读。")
-        form.addRow("激光扫描与回零速度", self.speed_spin)
-        settings.layout.addLayout(form)
-        settings.layout.addWidget(self.save_speed_button)
-        settings.layout.addWidget(self.save_result)
-        settings.layout.addStretch(1)
-        layout.addWidget(settings, 1)
-
-    def _save_speed(self) -> None:
-        try:
-            if getattr(self.controller, "preview_mode", False):
-                return
-            if not authorize(self, self.controller):
-                return
-            setter = getattr(self.controller, "set_chain_speed", None)
-            if not callable(setter):
-                raise RuntimeError("当前控制器尚未接入扫描速度设置")
-            setter(self.speed_spin.value())
-            self.save_result.setText("扫描速度已保存")
-            self.save_result.setStyleSheet(f"color: {theme.GREEN};")
-        except Exception as exc:
-            self.save_result.setText(f"保存失败：{exc}")
-            self.save_result.setStyleSheet(f"color: {theme.RED};")
-
-    def apply_state(self, state: UiState) -> None:
-        if self._last_speed != state.chain_speed:
-            self.speed_spin.setValue(state.chain_speed)
-            self._last_speed = state.chain_speed
-        self.position_value.setText(f"链条位置  {state.chain_position} pulse")
-        self.status_value.setText(f"采集状态  {state.chain_status}")
-        self.preview_value.setText(f"当前点数  {len(state.points):,} 点" if state.points is not None else "等待点云数据")
-
-
-class TaskPage(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
+        self._available = False
+        self._last_mask = None
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        summary = Panel("喷涂任务")
-        self.task_value = QLabel("等待任务")
-        self.stage_value = QLabel("待机")
-        self.stage_value.setWordWrap(True)
-        self.progress = QProgressBar()
-        for widget in (self.task_value, self.stage_value, self.progress):
-            summary.layout.addWidget(widget)
-        layout.addWidget(summary)
-        self.feedback_panel = Panel("运行明细")
-        self.feedback_table = QTableWidget(0, 3)
-        self.feedback_table.setHorizontalHeaderLabels(("反馈项目", "当前状态", "数据说明"))
-        self.feedback_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.feedback_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.feedback_table.verticalHeader().setVisible(False)
-        self.feedback_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.feedback_panel.layout.addWidget(self.feedback_table)
-        self.feedback_panel.hide()
-        layout.addWidget(self.feedback_panel, 1)
-        self.gun_panel = gun_panel = Panel("xn_side 分枪计划")
-        gun_panel.layout.addWidget(QLabel("显示当前工件的分枪计划；实际开枪状态等待设备反馈。"))
-        self._last_task = None
-        self.gun_table = QTableWidget(0, 5)
-        self.gun_table.setHorizontalHeaderLabels(("设备 / 喷枪", "分枪计划", "喷涂分组", "Y 范围 / 角度", "工艺阶段"))
-        self.gun_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.gun_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.gun_table.verticalHeader().setVisible(False)
-        self.gun_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        gun_panel.layout.addWidget(self.gun_table)
-        layout.addWidget(gun_panel, 1)
+        panel = Panel("设备控制")
+        self.enable_button = ControlButton("设备总使能")
+        self.enable_button.setCheckable(True)
+        self.enable_button.clicked.connect(self._send)
+        panel.layout.addWidget(self.enable_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.device_grid = QGridLayout()
+        self.device_grid.setHorizontalSpacing(theme.ui_px(20))
+        self.device_grid.setVerticalSpacing(theme.ui_px(10))
+        for column, title in enumerate(("左侧设备", "右侧设备")):
+            label = QLabel(title)
+            label.setStyleSheet(f"font-weight: 700; color: {theme.CYAN};")
+            self.device_grid.addWidget(label, 0, column)
+            self.device_grid.setColumnStretch(column, 1)
+        self.device_buttons = []
+        for index, name in enumerate(self.DEVICE_NAMES):
+            button = ControlButton(name)
+            button.setCheckable(True)
+            button.clicked.connect(self._send)
+            self.device_buttons.append(button)
+            self.device_grid.addWidget(button, index % 3 + 1, index // 3)
+        panel.layout.addLayout(self.device_grid)
+        self.result = QLabel("等待 PLC 通讯")
+        self.result.setWordWrap(True)
+        panel.layout.addWidget(self.result)
+        layout.addWidget(panel)
+        layout.addStretch(1)
+        self._sync()
 
-    def apply_state(self, state: UiState) -> None:
-        task = state.task
-        if task == self._last_task:
+    def _sync(self):
+        signature = (self._available, self.enable_button.isChecked(), tuple(b.isChecked() for b in self.device_buttons))
+        if signature == getattr(self, "_last_sync_signature", None):
             return
-        self._last_task = task
-        self.task_value.setText(task.name)
-        self.stage_value.setText(task.stage)
-        apply_task_progress(self.progress, task.progress)
-        self.feedback_panel.setVisible(bool(task.details))
-        self.gun_panel.setVisible(state.strategy_name == "complete_workpiece" or bool(task.gun_plans))
-        self.feedback_table.setRowCount(len(task.details))
-        for row, detail in enumerate(task.details):
-            for column, value in enumerate((detail.name, detail.status, detail.detail)):
-                item = QTableWidgetItem(value)
-                item.setToolTip(value)
-                self.feedback_table.setItem(row, column, item)
-        self.gun_table.setRowCount(len(task.gun_plans))
-        groups = {"outside": "外框", "inside": "内框", "up": "顶面", "down": "底面"}
-        for row, plan in enumerate(task.gun_plans):
-            value_text = lambda value: "待反馈" if value is None else str(value)
-            values = (
-                f"SN {plan.machine_id} / 喷枪 {plan.gun_id}",
-                "已选通（计划）" if plan.selected else "未选通（计划）",
-                f"{groups.get(plan.group, plan.group)} · {value_text(plan.group_id)}",
-                f"{value_text(plan.y_lower)}–{value_text(plan.y_upper)} mm / {value_text(plan.angle)}°", plan.stage,
-            )
-            for column, value in enumerate(values):
-                self.gun_table.setItem(row, column, QTableWidgetItem(value))
+        enabled = self.enable_button.isChecked()
+        self.enable_button.setEnabled(self._available)
+        for button in self.device_buttons:
+            if not enabled:
+                button.setChecked(False)
+            button.setEnabled(self._available and enabled)
+        for button in (self.enable_button, *self.device_buttons):
+            button.setStyleSheet(f"background: {theme.PANEL_ALT}; border-color: {theme.CYAN};" if button.isChecked() else "")
+        self._last_sync_signature = (self._available, self.enable_button.isChecked(), tuple(b.isChecked() for b in self.device_buttons))
+
+    def _send(self):
+        try:
+            if not self._available:
+                raise RuntimeError("PLC 未连接或正在停止")
+            if not authorize(self, self.controller):
+                self._set_mask(self._last_mask or 0)
+                return
+            self._sync()
+            mask = 0
+            if self.enable_button.isChecked():
+                mask = 1 | sum(1 << i for i, b in enumerate(self.device_buttons, 1) if b.isChecked())
+            self.controller.set_device_enable_mask(mask)
+            self.result.setText(f"已提交 Enable={mask}；等待软件发送状态更新。")
+        except Exception as exc:
+            self._set_mask(self._last_mask or 0)
+            self.result.setText(f"控制失败：{exc}")
+
+    def _set_mask(self, mask):
+        self.enable_button.setChecked(bool(mask & 1))
+        for i, button in enumerate(self.device_buttons, 1):
+            button.setChecked(bool(mask & (1 << i)))
+        self._sync()
+
+    def apply_state(self, state):
+        self._available = state.running and not state.stopping and any(d.name == "PLC" and d.online for d in state.devices)
+        mask = state.device_enable_mask if self._available else 0
+        if mask != self._last_mask or not self._available:
+            self._last_mask = mask
+            self._set_mask(mask)
+        self._sync()
 
 
 class DeviceConfigurationPage(QWidget):
@@ -285,24 +228,16 @@ class DeviceConfigurationPage(QWidget):
         self._loaded_sn = None
         self._loaded_strategy = None
         self._config_loaded = False
-        self._edit_unlocked = False
-        self._password_required = True
         self._stopping = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        header = QHBoxLayout()
-        header.addWidget(QLabel("设备"))
-        self.device_selector = QComboBox()
-        self.device_selector.currentIndexChanged.connect(self._load_device)
-        self.reload_button = ControlButton("重新读取")
-        self.reload_button.clicked.connect(self._reload_devices)
-        header.addWidget(self.device_selector)
-        header.addWidget(self.reload_button)
-        self.edit_button = ControlButton("解锁编辑")
-        self.edit_button.clicked.connect(self._toggle_edit)
-        header.addWidget(self.edit_button)
-        header.addStretch(1)
-        layout.addLayout(header)
+        self.selected_device_sn = None
+        self.device_buttons = {}
+        self.device_grid = QGridLayout()
+        layout.addLayout(self.device_grid)
+        self.parameter_title = QLabel("设备参数")
+        self.parameter_title.setStyleSheet(f"font-weight: 700; font-size: {theme.ui_px(16)}px; color: {theme.CYAN};")
+        layout.addWidget(self.parameter_title)
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs, 1)
         footer = QHBoxLayout()
@@ -320,21 +255,46 @@ class DeviceConfigurationPage(QWidget):
     def _reload_devices(self) -> None:
         from control.MachineConfigFrameControl import list_machine_devices
 
-        self.device_selector.blockSignals(True)
-        self.device_selector.clear()
+        previous_sn = self.selected_device_sn
+        self.selected_device_sn = None
+        self.parameter_title.setText("设备参数")
+        self.device_buttons = {}
+        while self.device_grid.count():
+            item = self.device_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
         self._config_loaded = False
         self.tabs.clear()
-        self._edit_unlocked = False
+        self.fields = {}
+        self.flat_fields = {}
         self._sync_edit_controls()
+        for column, title in enumerate(("左侧设备", "右侧设备")):
+            self.device_grid.addWidget(QLabel(title), 0, column)
+            self.device_grid.setColumnStretch(column, 1)
         try:
-            for sn, machine_type in list_machine_devices(self.strategy_name):
-                self.device_selector.addItem(f"SN {sn} · {machine_type}", sn)
+            devices = list_machine_devices(self.strategy_name)
+            for index, (sn, machine_type) in enumerate(devices):
+                standard = self.strategy_name == "frame_by_frame" and 0 <= sn < 6
+                name = DeviceControlPage.DEVICE_NAMES[sn] if standard else f"SN {sn} · {machine_type}"
+                button = ControlButton(name)
+                button.setCheckable(True)
+                button.clicked.connect(lambda checked=False, device_sn=sn: self._select_device(device_sn))
+                self.device_buttons[sn] = button
+                row, column = (sn % 3 + 1, sn // 3) if standard else (index // 2 + 1, index % 2)
+                self.device_grid.addWidget(button, row, column)
         except Exception as exc:
             self.save_result.setText(f"读取设备列表失败：{exc}")
-        finally:
-            self.device_selector.blockSignals(False)
-        if self.device_selector.count():
-            self._load_device()
+        if self.device_buttons:
+            self._select_device(previous_sn if previous_sn in self.device_buttons else next(iter(self.device_buttons)))
+
+    def _select_device(self, sn):
+        self.selected_device_sn = sn
+        for device_sn, button in self.device_buttons.items():
+            selected = device_sn == sn
+            button.setChecked(selected)
+            button.setStyleSheet(f"QPushButton {{ border: 2px solid {theme.CYAN}; background: #0d6174; color: #ffffff; font-weight: 700; }}" if selected else "")
+        self.parameter_title.setText(f"{self.device_buttons[sn].text()}设备参数")
+        self._load_device()
 
     def _load_device(self) -> None:
         from control.MachineConfigFrameControl import load_machine_config_for_ui
@@ -344,9 +304,8 @@ class DeviceConfigurationPage(QWidget):
         self.fields = {}
         self.flat_fields = {}
         self._config_loaded = False
-        self._edit_unlocked = False
         self._sync_edit_controls()
-        sn = self.device_selector.currentData()
+        sn = self.selected_device_sn
         if sn is None:
             return
         try:
@@ -357,7 +316,7 @@ class DeviceConfigurationPage(QWidget):
             self.save_result.setText(f"读取配置失败：{exc}")
             return
         order = parameter_order(sn, config, self.strategy_name)
-        self._add_config_tab("柜体参数", config, self.fields, order)
+        self._add_config_tab("参数", config, self.fields, order)
         if self.strategy_name == "complete_workpiece" and config.get("type") == "xn_side":
             flat = {**config, **(config.get("flat") or {})}
             flat.setdefault("z_spray_position", 500)
@@ -365,43 +324,36 @@ class DeviceConfigurationPage(QWidget):
         self._loaded_sn = sn
         self._loaded_strategy = self.strategy_name
         self._config_loaded = bool(self.fields)
-        self._password_required = bool(getattr(self.controller, "is_password_required", lambda: False)())
-        self._edit_unlocked = not self._password_required
         preview = getattr(self.controller, "preview_mode", False)
         self._sync_edit_controls()
         self.save_result.setText("预览模式：设备参数只读，不会写入生产配置。" if preview else
-                                "参数已读取，解锁编辑后可修改。" if self._password_required else "参数已读取，保存时沿用原有范围校验。")
+                                 "参数可直接修改，点击保存时验证密码（如已开启）。")
 
     def _sync_edit_controls(self) -> None:
         preview = getattr(self.controller, "preview_mode", False)
-        editable = self._config_loaded and self._edit_unlocked and not preview and not self._stopping
+        editable = self._config_loaded and not preview and not self._stopping
         for field in (*self.fields.values(), *self.flat_fields.values()):
             field.setReadOnly(not editable)
         self.save_button.setEnabled(editable)
-        self.edit_button.setEnabled(self._config_loaded and self._password_required and not preview and not self._stopping)
-        self.edit_button.setText("只读预览" if preview else "无需密码" if not self._password_required else
-                                 "锁定参数" if self._edit_unlocked else "解锁编辑")
-
-    def _toggle_edit(self) -> None:
-        if not self._config_loaded or getattr(self.controller, "preview_mode", False) or self._stopping:
-            return
-        if self._edit_unlocked:
-            self._edit_unlocked = False
-        else:
-            target = (self._loaded_sn, self._loaded_strategy)
-            allowed = authorize(self, self.controller)
-            self._edit_unlocked = bool(allowed and not self._stopping and self._config_loaded and
-                                       target == (self._loaded_sn, self._loaded_strategy))
-        self._sync_edit_controls()
-        self.save_result.setText("编辑已解锁，保存后生效。" if self._edit_unlocked else "参数保持只读，解锁编辑后可修改。")
 
     def _add_config_tab(self, title: str, config: dict, target: dict[str, QLineEdit], order: list[tuple[str, str]]) -> None:
         content = QWidget()
-        form = QFormLayout(content)
-        for key, label in order:
+        form = QGridLayout(content)
+        form.setHorizontalSpacing(theme.ui_px(12))
+        form.setVerticalSpacing(theme.ui_px(4))
+        rows = (len(order) + 1) // 2
+        for index, (key, label) in enumerate(order):
             field = QLineEdit(str(config.get(key, 100 if key == "x_status_offset" else "")))
-            form.addRow(label, field)
+            field.setStyleSheet(f"padding: {theme.ui_px(4)}px;")
+            field.setFixedWidth(theme.ui_px(90) * 5)
+            column, row = divmod(index, max(rows, 1))
+            caption = QLabel(label)
+            caption.setWordWrap(False)
+            form.addWidget(caption, row, column * 2)
+            form.addWidget(field, row, column * 2 + 1)
+            form.setColumnStretch(column * 2, 1)
             target[key] = field
+        form.setRowStretch(rows, 1)
         scroller = QScrollArea()
         scroller.setWidgetResizable(True)
         scroller.setWidget(content)
@@ -409,33 +361,25 @@ class DeviceConfigurationPage(QWidget):
 
     def _save_device(self) -> None:
         from control.MachineConfigFrameControl import save_machine_config_from_ui
-
         try:
-            if getattr(self.controller, "preview_mode", False) or not self._config_loaded or not self._edit_unlocked or self._stopping:
+            if getattr(self.controller, "preview_mode", False) or not self._config_loaded or self._stopping:
                 return
-            if self._loaded_sn != self.device_selector.currentData() or self._loaded_strategy != self.strategy_name:
-                raise ValueError("设备或策略已改变，请重新读取参数")
+            target = (self._loaded_sn, self._loaded_strategy, tuple(self.fields.values()), tuple(self.flat_fields.values()))
+            if self._loaded_sn != self.selected_device_sn or self._loaded_strategy != self.strategy_name:
+                raise ValueError("设备或策略已改变，请重新选择设备")
             if not authorize(self, self.controller):
-                self._edit_unlocked = False
-                self._sync_edit_controls()
-                self.save_result.setText("未获得保存授权，参数保持只读。")
+                self.save_result.setText("未获得保存授权，修改尚未保存。")
                 return
-            if self._stopping or not self._edit_unlocked or self._loaded_sn != self.device_selector.currentData() or self._loaded_strategy != self.strategy_name:
-                raise ValueError("运行或设备状态已改变，请重新读取并解锁参数")
+            current = (self._loaded_sn, self._loaded_strategy, tuple(self.fields.values()), tuple(self.flat_fields.values()))
+            if self._stopping or target != current or self._loaded_sn != self.selected_device_sn or self._loaded_strategy != self.strategy_name:
+                raise ValueError("运行或设备状态已改变，请重新选择设备后保存")
             values = {key: int(field.text().strip()) for key, field in self.fields.items()}
             if self.flat_fields:
                 values["flat"] = {key: int(field.text().strip()) for key, field in self.flat_fields.items()}
             control_queue = getattr(self.controller, "control_queue", None)
-            save_machine_config_from_ui(
-                self._loaded_sn, values,
-                control_queue=control_queue,
-                strategy_name=self.strategy_name,
-            )
+            save_machine_config_from_ui(self._loaded_sn, values, control_queue=control_queue, strategy_name=self.strategy_name)
             self.save_result.setText("设备参数已保存，更新已加入控制队列。" if control_queue is not None else "设备参数已保存，将在下次启动时加载。")
             self.save_result.setStyleSheet(f"color: {theme.GREEN};")
-            if self._password_required:
-                self._edit_unlocked = False
-                self._sync_edit_controls()
         except Exception as exc:
             self.save_result.setText(f"保存失败：{exc}")
             self.save_result.setStyleSheet(f"color: {theme.RED};")
@@ -443,49 +387,7 @@ class DeviceConfigurationPage(QWidget):
     def apply_state(self, state: UiState) -> None:
         if self._stopping != state.stopping:
             self._stopping = state.stopping
-            if state.stopping:
-                self._edit_unlocked = False
-            elif not self._password_required:
-                self._edit_unlocked = True
             self._sync_edit_controls()
         if self.strategy_name != state.strategy_name:
             self.strategy_name = state.strategy_name
             self._reload_devices()
-
-
-class RuntimeLogPage(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        toolbar = QHBoxLayout()
-        self.level_filter = QComboBox()
-        for label, levels in (("全部级别", ()), ("错误 / 严重", ("ERROR", "CRITICAL")),
-                              ("警告", ("WARNING", "WARN")), ("信息", ("INFO",)), ("调试", ("DEBUG",))):
-            self.level_filter.addItem(label, levels)
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("搜索日志内容或来源")
-        self.match_count = QLabel("0 / 0 条")
-        toolbar.addWidget(self.level_filter)
-        toolbar.addWidget(self.search_input, 1)
-        toolbar.addWidget(self.match_count)
-        layout.addLayout(toolbar)
-        self.log_view = RuntimeLogView()
-        self._all_logs = ()
-        self.level_filter.currentIndexChanged.connect(self._apply_filters)
-        self.search_input.textChanged.connect(self._apply_filters)
-        layout.addWidget(self.log_view)
-
-    def apply_state(self, state: UiState) -> None:
-        if state.logs == self._all_logs:
-            return
-        self._all_logs = state.logs
-        self._apply_filters()
-
-    def _apply_filters(self) -> None:
-        levels = self.level_filter.currentData()
-        query = self.search_input.text().strip().casefold()
-        entries = tuple(event for event in self._all_logs
-                        if (not levels or event.level.upper() in levels)
-                        and (not query or query in event.message.casefold() or query in event.source.casefold()))
-        self.log_view.apply_events(entries)
-        self.match_count.setText(f"{len(entries)} / {len(self._all_logs)} 条")

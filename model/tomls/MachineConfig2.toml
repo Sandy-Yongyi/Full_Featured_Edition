@@ -146,9 +146,11 @@ min_limit_pos = [0, 0, 0, -180]
 max_limit_pos = [900, 900, 900, 180]
 origin_pos = [1120, 1420, 1720, 2020, 2320, 2620]
 safe_pos = [0, 0, 0, 0]
+x_status_offset = 100
+search_front_z_offset = 100
+search_after_z_offset = 100
 
 [2.flat]
-z_spray_position = 500
 out_front_x_offset = 150
 out_after_x_offset = 180
 in_front_x_offset = 40
@@ -171,3 +173,6 @@ z_zeroing_speed = 200
 outside_total_cycles = 1
 inside_total_cycles = 1
 recip_reduce_distance = 0
+z_spray_position = 500
+search_front_z_offset = 100
+search_after_z_offset = 100

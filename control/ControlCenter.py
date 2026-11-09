@@ -133,7 +133,7 @@ class ControlCenter:
         if self.stopping:
             return
         data = self._runtime.poll() or {}
-        allowed = {"chain_position", "chain_status", "chain_speed", "points", "boxes", "devices", "task", "alarms"}
+        allowed = {"chain_position", "chain_status", "chain_speed", "chain_speed_mm_s", "device_enable_mask", "points", "boxes", "devices", "task", "alarms"}
         changes = {key: value for key, value in data.items() if key in allowed}
         if "updated" in data:
             if not data["updated"]:
@@ -168,6 +168,18 @@ class ControlCenter:
         self._state = self._replace_state(chain_speed=speed)
         if self.running and self._send_control is not None:
             self._send_control({"lidar_scan_speed": speed})
+
+    def set_device_enable_mask(self, mask: int) -> None:
+        if type(mask) is not int or not 0 <= mask <= 127:
+            raise ValueError("设备使能位必须为 0～127 的整数")
+        if not self.running or self.stopping or self.preview_mode:
+            raise RuntimeError("请先启动 PLC 通讯")
+        if not any(d.name == "PLC" and d.online for d in self._state.devices):
+            raise RuntimeError("PLC 未连接")
+        if self._send_control is None:
+            raise RuntimeError("设备控制未接入")
+        mask = mask if mask & 1 else 0
+        self._send_control({"device_enable_mask": mask})
 
     def _replace_state(self, **changes: Any) -> UiState:
         return UiState(**{field: changes.get(field, getattr(self._state, field)) for field in UiState.__dataclass_fields__})

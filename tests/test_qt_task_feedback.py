@@ -36,16 +36,6 @@ class TaskFeedbackTests(unittest.TestCase):
         self.assertIsNone(task.progress)
         self.assertEqual(1, len(process.frame_queue_manager.queues["left"][1]))
 
-    def test_task_table_shows_plan_not_invented_active_gun_numbers(self):
-        from control.UiState import UiState
-        from model.utils.UiTaskFeedback import build_task_feedback
-        from view.qt.pages import TaskPage
-        page = TaskPage()
-        page.apply_state(UiState(strategy_name="complete_workpiece", task=build_task_feedback(self.make_process())))
-        self.assertEqual(1, page.gun_table.rowCount())
-        self.assertIn("5", page.gun_table.item(0, 0).text())
-        self.assertIn("计划", page.gun_table.item(0, 1).text())
-        self.assertIn("待反馈", page.progress.format())
 
     def test_plc_status_message_contains_current_workpiece_plan(self):
         from control.PlcCommunicationProcess import PlcCommunicationProcess
@@ -58,7 +48,7 @@ class TaskFeedbackTests(unittest.TestCase):
         process.plc_data = SimpleNamespace(ChainPulse=18229)
         PlcCommunicationProcess._publish_ui_status(process, connected=True)
         message = output.get_nowait()
-        self.assertEqual(5, message["task"].gun_plans[0].gun_id)
+        self.assertEqual((), message["task"].gun_plans)
         self.assertIn("外侧前喷", message["task"].stage)
 
     def test_frame_mode_reports_fifo_timeout_and_cache_slots_without_consuming_frames(self):
@@ -147,26 +137,6 @@ class TaskFeedbackTests(unittest.TestCase):
             self.assertEqual("待反馈", details[name].status)
             self.assertEqual("点云占用待反馈", details[name].detail)
 
-    def test_task_page_switches_between_runtime_details_and_gun_plan_without_stale_rows(self):
-        from control.UiState import UiState
-        from model.utils.UiTaskFeedback import build_task_feedback
-        from view.qt.pages import TaskPage
-        page = TaskPage()
-        frame_task = build_task_feedback(SimpleNamespace(strategy_name="frame_by_frame"))
-        page.apply_state(UiState(strategy_name="frame_by_frame", task=frame_task))
-        self.assertIsNotNone(getattr(page, "feedback_table", None))
-        self.assertEqual(len(frame_task.details), page.feedback_table.rowCount())
-        self.assertFalse(page.feedback_panel.isHidden())
-        self.assertTrue(page.gun_panel.isHidden())
-        page.apply_state(UiState(strategy_name="complete_workpiece", task=build_task_feedback(self.make_process())))
-        self.assertTrue(page.feedback_panel.isHidden())
-        self.assertFalse(page.gun_panel.isHidden())
-        self.assertEqual(0, page.feedback_table.rowCount())
-        self.assertEqual(1, page.gun_table.rowCount())
-        page.apply_state(UiState.empty("continuous_bidirectional"))
-        self.assertEqual(0, page.gun_table.rowCount())
-        self.assertEqual(0, page.feedback_table.rowCount())
-        self.assertIn("待反馈", page.progress.format())
 
     def test_task_details_pass_through_plc_transport_and_expire_with_feedback(self):
         import pickle
@@ -192,7 +162,7 @@ class TaskFeedbackTests(unittest.TestCase):
         with patch("control.QtPipelineRuntime.time.monotonic", return_value=101):
             fresh_task = runtime.poll()["task"]
         self.assertEqual("重采定位中", fresh_task.stage)
-        self.assertEqual("扫描状态", fresh_task.details[0].name)
+        self.assertEqual((), fresh_task.details)
         with patch("control.QtPipelineRuntime.time.monotonic", return_value=110):
             stale_task = runtime.poll()["task"]
         self.assertEqual((), stale_task.details)

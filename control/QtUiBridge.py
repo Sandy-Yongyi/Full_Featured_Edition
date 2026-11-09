@@ -15,7 +15,7 @@ class QtUiBridge(QObject):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.poll_once)
 
-    def start(self, interval_ms: int = 100) -> None:
+    def start(self, interval_ms: int = 1000) -> None:
         self._timer.start(interval_ms)
 
     def stop(self) -> None:

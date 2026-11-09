@@ -10,6 +10,39 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 class DeviceConfigurationTests(unittest.TestCase):
+    def test_strategy_one_buttons_match_control_names_and_read_machineconfig_one(self):
+        from view.qt.pages import DeviceConfigurationPage, DeviceControlPage
+        from control.MachineConfigFrameControl import _get_toml_path
+        from PyQt6.QtWidgets import QComboBox
+        self.assertEqual('MachineConfig1.toml', Path(_get_toml_path('frame_by_frame')).name)
+        page = DeviceConfigurationPage(SimpleNamespace(strategy_name='frame_by_frame'))
+        self.assertEqual([], page.findChildren(QComboBox))
+        self.assertEqual(list(range(6)), list(page.device_buttons))
+        for sn, name in enumerate(DeviceControlPage.DEVICE_NAMES):
+            self.assertEqual(name, page.device_buttons[sn].text())
+            page.device_buttons[sn].click()
+            self.assertEqual(sn, page._loaded_sn)
+            self.assertEqual('frame_by_frame', page._loaded_strategy)
+            common = ['out_front_x_offset', 'out_after_x_offset', 'in_front_x_offset', 'in_after_x_offset']
+            tail = ['out_z_front_offset', 'out_z_after_offset', 'search_front_z_offset', 'search_after_z_offset',
+                    'x_pos_speed', 'x_recip_speed', 'y_pos_speed', 'y_recip_speed']
+            expected = (common + ['out_up_y_offset', 'in_up_y_offset'] + tail if sn % 3 == 0 else
+                        common + ['out_down_y_offset', 'in_down_y_offset'] + tail if sn % 3 == 1 else
+                        ['out_front_x_offset', 'out_up_y_offset', 'out_down_y_offset', 'out_z_front_offset',
+                         'out_z_after_offset', 'x_pos_speed', 'y_recip_speed'])
+            self.assertEqual(expected, list(page.fields))
+            scroller = page.tabs.widget(0)
+            self.assertEqual((len(expected) + 1) // 2 + 1, scroller.widget().layout().rowCount())
+            self.assertTrue(scroller.widgetResizable())
+            self.assertEqual(1, sum(b.isChecked() for b in page.device_buttons.values()))
+            self.assertEqual(f'{name}设备参数', page.parameter_title.text())
+            self.assertIn('background: #0d6174', page.device_buttons[sn].styleSheet())
+            self.assertTrue(all(not b.styleSheet() for key, b in page.device_buttons.items() if key != sn))
+        with patch('control.MachineConfigFrameControl.save_machine_config_from_ui') as save:
+            page._save_device()
+        self.assertEqual(5, save.call_args.args[0])
+        self.assertEqual('frame_by_frame', save.call_args.kwargs['strategy_name'])
+
     @classmethod
     def setUpClass(cls):
         from PyQt6.QtWidgets import QApplication
@@ -48,15 +81,6 @@ class DeviceConfigurationTests(unittest.TestCase):
         self.assertFalse(page.save_button.isEnabled())
         self.assertIn("只读", page.save_result.text())
 
-    def test_state_updates_do_not_replace_unsaved_speed_edits(self):
-        from control.UiState import UiState
-        from view.qt.pages import AcquisitionPage
-        page = AcquisitionPage(SimpleNamespace())
-        state = UiState(strategy_name="continuous_bidirectional", chain_speed=25)
-        page.apply_state(state)
-        page.speed_spin.setValue(32)
-        page.apply_state(state)
-        self.assertEqual(32, page.speed_spin.value())
 
     def test_both_tabs_persist_to_toml_and_notify_same_device(self):
         from model.utils.TomlLoader import TomlLoader
@@ -86,64 +110,57 @@ class DeviceConfigurationTests(unittest.TestCase):
                 devices = list_machine_devices("frame_by_frame")
         self.assertEqual([(1, "out_lift"), (7, "xn_side")], devices)
 
-    def test_preview_blocks_scan_speed_save(self):
-        from unittest.mock import Mock
-        from view.qt.pages import AcquisitionPage
-        setter = Mock()
-        page = AcquisitionPage(SimpleNamespace(preview_mode=True, set_chain_speed=setter))
-        page._save_speed()
-        setter.assert_not_called()
-        self.assertFalse(page.save_speed_button.isEnabled())
-        self.assertTrue(page.speed_spin.isReadOnly())
 
     def test_reload_recovers_device_list_after_configuration_is_repaired(self):
         from view.qt.pages import DeviceConfigurationPage
         controller = SimpleNamespace(strategy_name="frame_by_frame")
         with patch("control.MachineConfigFrameControl.list_machine_devices", side_effect=ValueError("duplicate key")):
             page = DeviceConfigurationPage(controller)
-        self.assertEqual(0, page.device_selector.count())
+        self.assertEqual({}, page.device_buttons)
         self.assertFalse(page.save_button.isEnabled())
 
         config = {"type": "out_lift", "out_z_front_offset": 150, "out_z_after_offset": 200}
         with patch("control.MachineConfigFrameControl.list_machine_devices", return_value=[(9, "out_lift")]), \
              patch("control.MachineConfigFrameControl.load_machine_config_for_ui", return_value=config):
-            page.reload_button.click()
-        self.assertEqual(9, page.device_selector.currentData())
+            page._reload_devices()
+        self.assertEqual(9, page.selected_device_sn)
         self.assertEqual("150", page.fields["out_z_front_offset"].text())
         self.assertTrue(page.save_button.isEnabled())
 
-    def test_protected_configuration_stays_readonly_until_edit_is_authorized(self):
-        page = self.make_page(password_required=True)
-        self.assertTrue(page.fields["x_pos_speed"].isReadOnly())
-        self.assertFalse(page.save_button.isEnabled())
-        with patch("view.qt.pages.authorize", return_value=False):
-            page.edit_button.click()
-        self.assertTrue(page.fields["x_pos_speed"].isReadOnly())
-        with patch("view.qt.pages.authorize", return_value=True):
-            page.edit_button.click()
+    def test_protected_configuration_authorizes_only_on_save(self):
+        with patch("view.qt.pages.authorize") as auth:
+            page = self.make_page(password_required=True)
+            page.fields["x_pos_speed"].setText("350")
+            auth.assert_not_called()
         self.assertFalse(page.fields["x_pos_speed"].isReadOnly())
-        self.assertFalse(page.flat_fields["x_pos_speed"].isReadOnly())
         self.assertTrue(page.save_button.isEnabled())
-        page.edit_button.click()
-        self.assertTrue(page.fields["x_pos_speed"].isReadOnly())
-
-    def test_locked_configuration_blocks_direct_save_call(self):
-        page = self.make_page(password_required=True)
+        self.assertFalse(hasattr(page, "edit_button"))
+        self.assertFalse(hasattr(page, "reload_button"))
+        self.assertEqual("参数", page.tabs.tabText(0))
+        with patch("control.MachineConfigFrameControl.save_machine_config_from_ui") as save, \
+             patch("view.qt.pages.authorize", return_value=False) as auth:
+            page.save_button.click()
+            auth.assert_called_once()
+            save.assert_not_called()
+        self.assertEqual("350", page.fields["x_pos_speed"].text())
         with patch("control.MachineConfigFrameControl.save_machine_config_from_ui") as save, \
              patch("view.qt.pages.authorize", return_value=True):
-            page._save_device()
-        save.assert_not_called()
+            page.save_button.click()
+            self.assertEqual(350, save.call_args.args[1]["x_pos_speed"])
 
-    def test_shutdown_during_authorization_does_not_unlock_or_save(self):
+    def test_shutdown_during_save_authorization_does_not_save(self):
         from control.UiState import UiState
         page = self.make_page(password_required=True)
         def shutdown_during_prompt(*_):
             page.apply_state(UiState(strategy_name="complete_workpiece", stopping=True))
             return True
-        with patch("view.qt.pages.authorize", side_effect=shutdown_during_prompt):
-            page._toggle_edit()
-        page.apply_state(UiState.empty("complete_workpiece"))
+        with patch("view.qt.pages.authorize", side_effect=shutdown_during_prompt), \
+             patch("control.MachineConfigFrameControl.save_machine_config_from_ui") as save:
+            page._save_device()
+            save.assert_not_called()
         self.assertTrue(page.fields["x_pos_speed"].isReadOnly())
+        page.apply_state(UiState.empty("complete_workpiece"))
+        self.assertFalse(page.fields["x_pos_speed"].isReadOnly())
 
     def test_unprotected_configuration_is_editable_again_after_stop(self):
         from control.UiState import UiState

@@ -60,6 +60,8 @@ class UiState:
     stopping: bool = False
     chain_position: int = 0
     chain_speed: int = 25
+    chain_speed_mm_s: float | None = None
+    device_enable_mask: int = 0
     chain_status: str = "待机"
     points: Any | None = None
     boxes: Any | None = None

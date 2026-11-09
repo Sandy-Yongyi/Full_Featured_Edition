@@ -61,10 +61,27 @@ PARAM_LABELS = {
 
 OUT_2D_SERVO_PARAM_KEYS = [
         "out_front_x_offset",
-        "x_pos_speed",
+        "out_up_y_offset",
+        "out_down_y_offset",
         "out_z_front_offset",
         "out_z_after_offset",
+        "x_pos_speed",
+        "y_recip_speed",
     ]
+
+INOUT_UP_PARAM_KEYS = [
+    "out_front_x_offset", "out_after_x_offset", "in_front_x_offset", "in_after_x_offset",
+    "out_up_y_offset", "in_up_y_offset", "out_z_front_offset", "out_z_after_offset",
+    "search_front_z_offset", "search_after_z_offset",
+    "x_pos_speed", "x_recip_speed", "y_pos_speed", "y_recip_speed",
+]
+
+INOUT_DOWN_PARAM_KEYS = [
+    "out_front_x_offset", "out_after_x_offset", "in_front_x_offset", "in_after_x_offset",
+    "out_down_y_offset", "in_down_y_offset", "out_z_front_offset", "out_z_after_offset",
+    "search_front_z_offset", "search_after_z_offset",
+    "x_pos_speed", "x_recip_speed", "y_pos_speed", "y_recip_speed",
+]
 
 OUT_LIFT_PARAM_KEYS = ["out_z_front_offset", "out_z_after_offset"]
 
@@ -122,13 +139,14 @@ def parameter_order(sn: int, config: dict, strategy_name: str) -> list[tuple[str
     if strategy_name == "continuous_bidirectional":
         return [(key, CONTINUOUS_LABELS[key]) for key in CONTINUOUS_PARAM_KEYS.get(config.get("type"), ())]
     if strategy_name == "frame_by_frame":
-        keys = {
-            "xn_updown4": XN_UPDOWN4_PARAM_KEYS,
-            "xn_updown2": XN_UPDOWN2_PARAM_KEYS,
-            "out_2d_servo": OUT_2D_SERVO_PARAM_KEYS,
-            "out_lift": OUT_LIFT_PARAM_KEYS,
-        }.get(config.get("type"), ())
+        keys = {"inout_up": INOUT_UP_PARAM_KEYS,
+                "inout_down": INOUT_DOWN_PARAM_KEYS,
+                "2d_servo": OUT_2D_SERVO_PARAM_KEYS,
+                "xn_updown4": XN_UPDOWN4_PARAM_KEYS,
+                "xn_updown2": XN_UPDOWN2_PARAM_KEYS,
+                "out_2d_servo": OUT_2D_SERVO_PARAM_KEYS,
+                "out_lift": OUT_LIFT_PARAM_KEYS,
+                }.get(config.get("type"), ())
     else:
         keys = DEVICE_PARAM_KEYS.get(sn, DEVICE_PARAM_KEYS[1] if config.get("type") == "xn_side" else ())
     return [(key, PARAM_LABELS[key]) for key in keys]
-

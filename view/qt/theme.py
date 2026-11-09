@@ -1,5 +1,14 @@
 """Dark industrial color system shared by Qt views."""
 
+import re
+
+UI_SCALE = 1.25
+
+
+def ui_px(value: int) -> int:
+    """Scale interface dimensions, independent of the OpenGL scene."""
+    return int(value * UI_SCALE + 0.5)
+
 BACKGROUND = "#071220"
 PANEL = "#0c1b30"
 PANEL_ALT = "#10243f"
@@ -13,7 +22,7 @@ RED = "#f56b70"
 
 
 def build_industrial_stylesheet() -> str:
-    return f"""
+    stylesheet = f"""
         QMainWindow, QWidget {{ background: {BACKGROUND}; color: {TEXT}; font-family: 'Microsoft YaHei'; font-size: 13px; }}
         QLabel, QCheckBox {{ background: transparent; }}
         QFrame#panel {{ background: {PANEL}; border: 1px solid {LINE}; border-radius: 8px; }}
@@ -36,3 +45,4 @@ def build_industrial_stylesheet() -> str:
         QProgressBar {{ background: #17314d; border: none; border-radius: 3px; height: 7px; text-align: center; }}
         QProgressBar::chunk {{ background: {CYAN}; border-radius: 3px; }}
     """
+    return re.sub(r"\b(\d+)px\b", lambda match: f"{ui_px(int(match.group(1)))}px", stylesheet)

@@ -20,7 +20,7 @@ from model.utils.MachineConfigUtil import MACHINE_OFFSET_KEYS, get_machine_confi
 from model.motionplan.MotionCompleteWorkpiecePlanning import MotionCompleteWorkpiecePlanning
 from model.utils.ProcessHeartbeat import ProcessHeartbeat
 from model.utils.UiTelemetry import UiStatusPublisher
-from model.utils.UiTaskFeedback import build_task_feedback
+from model.utils.UiTaskFeedback import build_task_summary
 from control.UiState import TaskState
 from model.motionplan.ContinuousLidarScan import ContinuousLidarScan
 from model.motionplan.MotionContinuousBidirectionalPlanning import MotionContinuousBidirectionalPlanning
@@ -46,6 +46,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
         self.raw_data_queue = raw_data_queue
         self.pulse_queue = pulse_queue
         self.control_queue = control_queue
+        self.device_enable_mask = 0
         self.machine_data_queue = machine_data_queue  # 用于 complete_workpiece 模式
         self.strategy_name = validate_strategy_name(strategy_name)
         self._heartbeat = ProcessHeartbeat(heartbeat, heartbeat_interval_s)
@@ -358,7 +359,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
             self._update_enable_value()
             check_and_rotate_log()
             # 处理数据发送，发送给PLC
-            moving_frame = self._axis_to_moving_frame()  # 按当前模式转换为运动帧数据
+            moving_frame = self._apply_device_enable(self._axis_to_moving_frame())
             if not self.simulation_mode:
                 # logger.info(f"PLC Operate=0b{int(self.plc_data.Operate):016b}")
                 logger.debug(f"moving now send moving_frame {moving_frame}")
@@ -436,12 +437,14 @@ class PlcCommunicationProcess(multiprocessing.Process):
             return False
 
     def _publish_ui_status(self, connected: bool, force: bool = False):
+        if not connected:
+            self.device_enable_mask = 0
         publisher = getattr(self, "ui_status", None)
         if publisher is None or not publisher.is_due(force):
             return
         data = getattr(self, "plc_data", None)
         try:
-            task = build_task_feedback(self) if connected else TaskState(stage="等待 PLC 通讯恢复")
+            task = build_task_summary(self) if connected else TaskState(stage="等待 PLC 通讯恢复")
         except Exception:
             # Optional display feedback must not interrupt the control cycle.
             task = TaskState(stage="分枪计划暂不可用")
@@ -450,6 +453,8 @@ class PlcCommunicationProcess(multiprocessing.Process):
             simulated=self.simulation_mode,
             task=task,
             pulse=int(getattr(data, "ChainPulse", 0) or 0),
+            chain_speed_mm_s=float(getattr(data, "ChainSpeed", 0) or 0),
+            device_enable_mask=int(getattr(self, "device_enable_mask", 0)),
             motion=(getattr(self.continuous_scan, "motion_status", "stopped")
                     if is_continuous_bidirectional_mode(self.strategy_name) and hasattr(self, "continuous_scan")
                     else self.chain_motion_status),
@@ -889,6 +894,14 @@ class PlcCommunicationProcess(multiprocessing.Process):
                     logger.warning("control_queue msg is not dict, skipped")
                     continue
 
+                if "device_enable_mask" in msg:
+                    mask = msg["device_enable_mask"]
+                    if type(mask) is int and 0 <= mask <= 127:
+                        self.device_enable_mask = mask if mask & 1 else 0
+                    else:
+                        logger.warning("Invalid device enable mask")
+                    continue
+
                 if "lidar_scan_speed" in msg and is_continuous_bidirectional_mode(self.strategy_name):
                     self.continuous_scan.set_speed(msg["lidar_scan_speed"])
                     logger.info(f"Scan and homing speed updated to {self.continuous_scan.speed} mm/s")
@@ -960,6 +973,11 @@ class PlcCommunicationProcess(multiprocessing.Process):
             return self.complete_workpiece_planner.build_moving_frame(self)
         return self.frame_by_frame_motion_planner.build_moving_frame(self)
 
+    def _apply_device_enable(self, frame):
+        mask = int(getattr(self, "device_enable_mask", 0)) & 127
+        frame.Enable = mask if mask & 1 else 0
+        return frame
+
     def after_spray_complete(self, direction: str, sn: int):
         """喷涂完成后删除当前工件，并同步维护 complete_workpiece 的位置跟踪标记。"""
         ok = self.frame_queue_manager.shift_queue(direction, sn)
@@ -999,6 +1017,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
 
     def _handle_connection_error(self, plc):
         """处理连接异常，支持初始连接和已连接状态的断开重连"""
+        self.device_enable_mask = 0
         self.plc_connected = False
         max_retries = self.read_data_config["plc_connect_max_retries"]
         for attempt in range(max_retries):

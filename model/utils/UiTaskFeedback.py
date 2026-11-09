@@ -54,6 +54,30 @@ def _continuous_task_feedback(process) -> TaskState:
     return TaskState(name="往复采集与工位流转", stage=stage, details=tuple(details))
 
 
+def build_task_summary(process) -> TaskState:
+    """Only fields rendered by the realtime page; never traverse gun plans."""
+    if process.strategy_name == "frame_by_frame":
+        return TaskState(name="逐帧联动喷涂", stage="原始数据超时" if getattr(process, "raw_data_timeout_active", False) else "帧队列联动")
+    if process.strategy_name == "continuous_bidirectional":
+        scan = getattr(process, "continuous_scan", None)
+        stages = {"startup": "扫描初始化", "homing": "扫描轴回零", "waiting": "等待扫描",
+                  "scanning": "往复扫描中", "complete": "本趟扫描完成", "retry_wait": "等待重采确认",
+                  "retry_position": "重采定位中", "fault": "扫描故障"}
+        return TaskState(name="往复采集与工位流转", stage=stages.get(getattr(scan, "stage", None), "扫描阶段待反馈"))
+    planner = getattr(getattr(process, "complete_workpiece_planner", None), "xn_side_planner", None)
+    states = getattr(planner, "_work_states", {})
+    queues = getattr(getattr(process, "frame_queue_manager", None), "queues", {})
+    stages = []
+    for sn_key, config in process.machine_config.items():
+        if config.get("type") != "xn_side":
+            continue
+        sn = int(sn_key)
+        frames = queues.get(config.get("install_orietation"), {}).get(sn)
+        stage = STAGES.get(states.get(sn, {}).get("state"), "等待工艺阶段反馈") if frames and frames[0] is not None else "等待工件"
+        stages.append(f"SN {sn} · {stage}")
+    return TaskState(name="完整工件喷涂", stage=" / ".join(stages) or "等待工件")
+
+
 def build_task_feedback(process) -> TaskState:
     if process.strategy_name == "frame_by_frame":
         return _frame_task_feedback(process)

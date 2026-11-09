@@ -20,6 +20,13 @@ class FakeController:
 
 
 class QtUiBridgeTests(unittest.TestCase):
+    def test_default_refresh_interval_is_one_second(self):
+        from control.QtUiBridge import QtUiBridge
+        bridge = QtUiBridge(FakeController())
+        bridge.start()
+        self.assertEqual(1000, bridge._timer.interval())
+        bridge.stop()
+
     @classmethod
     def setUpClass(cls):
         from PyQt6.QtWidgets import QApplication

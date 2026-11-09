@@ -4,14 +4,14 @@ from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 
 from control.UiState import UiState
-from view.qt.pages import AcquisitionPage, DeviceConfigurationPage, RealtimeControlPage, RuntimeLogPage, TaskPage
-from view.qt.theme import CYAN, MUTED, build_industrial_stylesheet
+from view.qt.pages import DeviceConfigurationPage, RealtimeControlPage, DeviceControlPage
+from view.qt.theme import CYAN, MUTED, build_industrial_stylesheet, ui_px
 from view.qt.auth import authorize
 
 
 class IndustrialMainWindow(QMainWindow):
-    ROUTES = ("realtime", "acquisition", "tasks", "configuration", "logs")
-    ROUTE_LABELS = ("实时控制", "点云采集", "喷涂任务", "设备配置", "运行记录")
+    ROUTES = ("realtime", "device_control", "configuration")
+    ROUTE_LABELS = ("实时控制", "设备控制", "设备配置")
 
     def __init__(self, controller, bridge=None, parent=None):
         super().__init__(parent)
@@ -20,6 +20,8 @@ class IndustrialMainWindow(QMainWindow):
         self._last_state = UiState.empty(getattr(controller, "strategy_name", "complete_workpiece"))
         self._close_pending = False
         self._close_authorized = False
+        self._last_header = None
+        self._last_alarm_text = None
         self.setWindowTitle("JOIHEY · 智能喷涂控制中心")
         control_type = getattr(controller, "control_type", 2)
         if control_type in (1, 3):
@@ -36,12 +38,12 @@ class IndustrialMainWindow(QMainWindow):
         root = QWidget(self)
         self.setCentralWidget(root)
         layout = QVBoxLayout(root)
-        layout.setContentsMargins(12, 10, 12, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(ui_px(12), ui_px(10), ui_px(12), ui_px(12))
+        layout.setSpacing(ui_px(10))
 
         header = QHBoxLayout()
         brand = QLabel("◆  JOIHEY · 智能喷涂控制中心")
-        brand.setStyleSheet(f"font-weight: 700; font-size: 17px; color: {CYAN};")
+        brand.setStyleSheet(f"font-weight: 700; font-size: {ui_px(17)}px; color: {CYAN};")
         header.addWidget(brand)
         header.addStretch(1)
         self.system_status = QLabel("● 系统待机")
@@ -51,20 +53,20 @@ class IndustrialMainWindow(QMainWindow):
         self.alarm_banner = QLabel()
         self.alarm_banner.setTextFormat(Qt.TextFormat.PlainText)
         self.alarm_banner.setWordWrap(True)
-        self.alarm_banner.setStyleSheet("background: #3b202b; color: #ffd8da; border: 1px solid #7d3645; border-radius: 6px; padding: 10px;")
+        self.alarm_banner.setStyleSheet(f"background: #3b202b; color: #ffd8da; border: 1px solid #7d3645; border-radius: {ui_px(6)}px; padding: {ui_px(10)}px;")
         self.alarm_banner.hide()
         self.alarm_scroll = QScrollArea()
         self.alarm_scroll.setWidgetResizable(True)
         self.alarm_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.alarm_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.alarm_scroll.setMaximumHeight(120)
+        self.alarm_scroll.setMaximumHeight(ui_px(120))
         self.alarm_scroll.setWidget(self.alarm_banner)
         self.alarm_scroll.hide()
         layout.addWidget(self.alarm_scroll)
 
         content = QHBoxLayout()
         self.navigation = QListWidget()
-        self.navigation.setFixedWidth(190)
+        self.navigation.setFixedWidth(ui_px(190))
         for label in self.ROUTE_LABELS:
             self.navigation.addItem(QListWidgetItem(label))
         self.navigation.currentRowChanged.connect(self._change_page)
@@ -72,11 +74,9 @@ class IndustrialMainWindow(QMainWindow):
 
         self.workspace = QStackedWidget()
         self.realtime_page = RealtimeControlPage(self.controller)
-        self.acquisition_page = AcquisitionPage(self.controller)
-        self.tasks_page = TaskPage()
+        self.device_control_page = DeviceControlPage(self.controller)
         self.configuration_page = DeviceConfigurationPage(self.controller)
-        self.logs_page = RuntimeLogPage()
-        for page in (self.realtime_page, self.acquisition_page, self.tasks_page, self.configuration_page, self.logs_page):
+        for page in (self.realtime_page, self.device_control_page, self.configuration_page):
             self.workspace.addWidget(page)
         content.addWidget(self.workspace, 1)
         layout.addLayout(content, 1)
@@ -92,24 +92,22 @@ class IndustrialMainWindow(QMainWindow):
     def apply_state(self, state: UiState) -> None:
         self._last_state = state
         self._set_alarm_text("\n".join(dict.fromkeys(state.alarms)))
-        if state.stopping:
-            self.system_status.setText("● 系统停止中")
-            self.system_status.setStyleSheet("color: #ffb351;")
-        elif state.running:
-            self.system_status.setText(f"● {state.chain_status}")
-            self.system_status.setStyleSheet("color: #2bd49d;")
-        else:
-            self.system_status.setText("● 系统待机")
-            self.system_status.setStyleSheet(f"color: {MUTED};")
+        header = (("● 系统停止中", "#ffb351") if state.stopping else
+                  (f"● {state.chain_status}", "#2bd49d") if state.running else ("● 系统待机", MUTED))
+        if header != self._last_header:
+            self.system_status.setText(header[0])
+            self.system_status.setStyleSheet(f"color: {header[1]};")
+            self._last_header = header
         self.realtime_page.apply_state(state)
-        self.acquisition_page.apply_state(state)
-        self.tasks_page.apply_state(state)
+        self.device_control_page.apply_state(state)
         self.configuration_page.apply_state(state)
-        self.logs_page.apply_state(state)
         if self._close_pending and not state.running and not state.stopping:
             QTimer.singleShot(0, self.close)
 
     def _set_alarm_text(self, text: str) -> None:
+        if text == self._last_alarm_text:
+            return
+        self._last_alarm_text = text
         self.alarm_banner.setText(text)
         self.alarm_banner.setVisible(bool(text))
         self.alarm_scroll.setVisible(bool(text))
