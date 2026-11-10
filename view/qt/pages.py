@@ -190,7 +190,7 @@ class DeviceControlPage(QWidget):
                 button.setChecked(False)
             button.setEnabled(self._available and enabled)
         for button in (self.enable_button, *self.device_buttons):
-            button.setStyleSheet(f"background: {theme.PANEL_ALT}; border-color: {theme.CYAN};" if button.isChecked() else "")
+            button.setStyleSheet(f"background: #12613f; border-color: {theme.GREEN}; color: #ffffff;" if button.isChecked() else "")
         self._last_sync_signature = (self._available, self.enable_button.isChecked(), tuple(b.isChecked() for b in self.device_buttons))
 
     def _send(self):
@@ -205,7 +205,8 @@ class DeviceControlPage(QWidget):
             if self.enable_button.isChecked():
                 mask = 1 | sum(1 << i for i, b in enumerate(self.device_buttons, 1) if b.isChecked())
             self.controller.set_device_enable_mask(mask)
-            self.result.setText(f"已提交 Operate={mask}；等待软件发送状态更新。")
+            self._last_mask = mask
+            self.result.setText("开关请求已提交；已关闭的设备回到安全位置后才撤销报文使能。")
         except Exception as exc:
             self._set_mask(self._last_mask or 0)
             self.result.setText(f"控制失败：{exc}")

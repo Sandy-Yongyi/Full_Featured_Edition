@@ -259,6 +259,9 @@ class MotionToTarget:
         orientation = machine_cfg.get("install_orietation", "left")
         axis_type_list = machine_cfg.get("axis_type", [])
         axis_map = get_axis_map(machine_type, orientation)
+        feedback_axes = getattr(plc_data, "AxisList", ())
+        if not axis_type_list or any(name not in axis_map or axis_map[name] >= len(feedback_axes) for name in axis_type_list):
+            return False
         for axis_name in axis_type_list:
             if axis_name in axis_map:
                 cur_pos = self._get_axis_current_pos(plc_data, axis_map[axis_name])

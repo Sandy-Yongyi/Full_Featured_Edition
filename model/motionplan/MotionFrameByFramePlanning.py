@@ -1,7 +1,9 @@
+from model.motionplan.motionutil.DeviceEnableHelper import final_operate, requested_operate
 from model.motionplan.MachineAxisMap import apply_device_axes_to_list
 from model.motionplan.MotionCleaningPlanning import MotionCleaningPlanning
 from model.motionplan.MotionManualOutFxPlanning import MotionManualOutFxPlanning
 from model.motionplan.MotionOut2DServoFramePlanning import MotionOut2DServoFramePlanning
+from model.motionplan.Motion2DXYServoFramePlanning import Motion2DXYServoFramePlanning
 from model.motionplan.MotionOutFxFramePlanning import MotionOutFxFramePlanning
 from model.motionplan.MotionOutLiftFramePlanning import MotionOutLiftFramePlanning
 from model.motionplan.MotionToTarget import MotionToTarget
@@ -19,6 +21,7 @@ class MotionFrameByFramePlanning:
         self.manual_out_fx_planner = MotionManualOutFxPlanning()
         self.motion_to_target = MotionToTarget()
         self.out_2d_servo_planner = MotionOut2DServoFramePlanning(self.motion_to_target)
+        self.xy_servo_planner = Motion2DXYServoFramePlanning(motion_to_target=self.motion_to_target)
         self.out_lift_planner = MotionOutLiftFramePlanning()
         self.xn_updown2_planner = MotionXNUpdown2FramePlanning()
         self.xn_updown4_planner = MotionXNUpdown4FramePlanning()
@@ -27,7 +30,7 @@ class MotionFrameByFramePlanning:
 
     def build_moving_frame(self, proc) -> SendMovingFrameData:
         moving_frame = SendMovingFrameData()
-        plc_enable = (proc.plc_data.Operate & 0x01) == 1
+        plc_enable = (requested_operate(proc) & 0x01) == 1
         axis_list = create_axis_list()
         servo_alarm = proc.plc_data.Status != 1
         lidar_abnormal = int(getattr(proc, "lidar_status", 0) or 0) in (1, 2, 3)
@@ -56,24 +59,24 @@ class MotionFrameByFramePlanning:
             )
             stop_chain = stop_chain or auto_stop_chain
 
-        proc.last_operate_state = proc.plc_data.Operate
+        proc.last_operate_state = requested_operate(proc)
 
         moving_frame.AxisList = axis_list
-        moving_frame.Operate = enable_value
+        moving_frame.Operate = final_operate(requested_operate(proc), enable_value)
         moving_frame.Gun_cont1 = 0
         moving_frame.Gun_cont2 = 0
         moving_frame.HeartBeat = proc.plc_data.HeartBeat
         moving_frame.Control = 0 if stop_chain else 0x02
         # bit15 反映全部帧队列中有无非零点云，与设备使能和停链状态无关。
         if self.cleaning_planner.has_any_frame_data(proc.frame_queue_manager):
-            moving_frame.Control |= 1 << 15
+            moving_frame.Control = (moving_frame.Control | 0x8000) - 0x10000  # Int16 保留 bit15，按有符号值序列化。
         return moving_frame
 
     def _build_auto_mode_enable_and_axes(self, proc, force_disable_all, clean_mode_just_closed, axis_list):
         """自动模式逐设备规划；故障时通过关闭有效设备位进入安全返回。"""
         enable_value = 0
         stop_chain = False
-        effective_operate = 0 if force_disable_all else proc.plc_data.Operate
+        effective_operate = 0 if force_disable_all else requested_operate(proc)
 
         for sn in range(proc.num_devices):
             machine_cfg = proc.machine_config.get(str(sn))
@@ -96,7 +99,7 @@ class MotionFrameByFramePlanning:
             if not device_operate_enabled or should_return_safe:
                 axis_cmds, all_ready = self._build_inactive_device_axes(proc, sn, machine_cfg, runtime_cfg, machine_type, should_return_safe)
                 proc.device_origin_complete[sn] = all_ready
-                device_enable = not all_ready
+                device_enable = should_return_safe and not all_ready
             else:
                 axis_cmds, device_stop_chain = self._build_active_device_axes(proc, sn, machine_cfg, runtime_cfg, machine_type)
                 stop_chain = stop_chain or device_stop_chain
@@ -116,12 +119,18 @@ class MotionFrameByFramePlanning:
         if machine_type == "xn_updown4":
             self.xn_updown4_planner.reset_motion_state(sn)
 
+        if not should_return_safe:
+            return self.motion_to_target.hold_current_position(machine_cfg, proc.plc_data), proc.device_origin_complete.get(sn, False)
+
         if machine_type == "xn_updown2":
             self.xn_updown2_planner.reset_motion_state(sn, preserve_safe_return=True)
             axis_cmds, all_ready = self.xn_updown2_planner.request_safe_return(machine_cfg, runtime_cfg, proc.plc_data)
             proc.device_returning_to_origin[sn] = not all_ready
         elif machine_type == "out_2d_servo":
             axis_cmds, all_ready = self.out_2d_servo_planner.build_zero_commands(machine_cfg, runtime_cfg, proc.plc_data)
+            proc.device_returning_to_origin[sn] = not all_ready
+        elif machine_type == "H2D_XYservo":
+            axis_cmds, all_ready = self.xy_servo_planner.build_zero_commands(machine_cfg, runtime_cfg, proc.plc_data)
             proc.device_returning_to_origin[sn] = not all_ready
         elif should_return_safe:
             axis_cmds, all_ready = self.motion_to_target.move_to_origin_safe(machine_cfg, runtime_cfg, proc.plc_data)
@@ -145,6 +154,9 @@ class MotionFrameByFramePlanning:
             device_stop_chain = False
         elif machine_type == "out_2d_servo":
             axis_cmds, device_stop_chain = self.out_2d_servo_planner.auto_out_2d_servo_move(machine_cfg, runtime_cfg, proc.plc_data, proc.frame_queue_manager)
+        elif machine_type == "H2D_XYservo":
+            axis_cmds, _ = self.xy_servo_planner.auto_xy_servo_move(machine_cfg, runtime_cfg, proc.plc_data, proc.frame_queue_manager)
+            device_stop_chain = False
         elif machine_type == "out_fx":
             axis_cmds, _, device_stop_chain = self.out_fx_planner.auto_out_fx_move(
                 machine_cfg=machine_cfg,
@@ -184,13 +196,17 @@ class MotionFrameByFramePlanning:
         return enable_value
 
     def _resolve_clean_mode_state(self, proc, force_disable_all):
-        clean_mode_enabled = (not force_disable_all) and self.cleaning_planner.is_clean_mode_enabled(proc.plc_data.Operate)
+        clean_mode_enabled = (not force_disable_all) and self.cleaning_planner.is_clean_mode_enabled(requested_operate(proc))
         clean_mode_ready = clean_mode_enabled and not self.cleaning_planner.has_any_frame_data(proc.frame_queue_manager)
         if clean_mode_enabled and not clean_mode_ready:
             self.cleaning_planner.log_clean_mode_blocked("当前按帧队列中仍有点云，请关闭清理模式")
         return clean_mode_enabled, clean_mode_ready
 
     def _handle_clean_mode_device(self, proc, sn, machine_cfg, runtime_cfg, clean_mode_ready, axis_list, enable_value):
+        if not requested_operate(proc) & (1 << (sn + 1)):
+            return self._handle_unrequested_device(proc, sn, machine_cfg, runtime_cfg, axis_list, enable_value)
+        if machine_cfg.get("type") == "H2D_XYservo":
+            self.xy_servo_planner.reset_motion_state(sn)
         if machine_cfg.get("type") == "xn_updown4":
             self.xn_updown4_planner.reset_motion_state(sn)
         if machine_cfg.get("type") == "xn_updown2":
@@ -210,6 +226,14 @@ class MotionFrameByFramePlanning:
     def _is_clean_mode_just_closed(self, proc, clean_mode_enabled):
         last_clean_mode_enabled = self.cleaning_planner.is_clean_mode_enabled(proc.last_operate_state)
         return last_clean_mode_enabled and not clean_mode_enabled
+
+    def _handle_unrequested_device(self, proc, sn, machine_cfg, runtime_cfg, axis_list, enable_value):
+        returning = proc.device_returning_to_origin.get(sn, False) or bool(proc.last_operate_state & (1 << (sn + 1)))
+        commands, ready = self._build_inactive_device_axes(proc, sn, machine_cfg, runtime_cfg, machine_cfg.get("type", ""), returning)
+        proc.device_origin_complete[sn] = ready
+        if commands:
+            apply_device_axes_to_list(proc.machine_config, sn, commands, axis_list)
+        return enable_value | ((1 << (sn + 1)) if returning and not ready else 0)
 
     @staticmethod
     def _should_return_safe_before_idle(device_operate_enabled, device_just_closed, clean_mode_just_closed, device_returning):
@@ -240,7 +264,13 @@ class MotionFrameByFramePlanning:
             runtime_cfg = proc.runtime_machine_config.get(sn, {})
             machine_type = machine_cfg.get("type", "")
             device_bit = sn + 1
-            device_operate_enabled = (proc.plc_data.Operate & (1 << device_bit)) != 0
+            device_operate_enabled = (requested_operate(proc) & (1 << device_bit)) != 0
+            if not device_operate_enabled or proc.device_returning_to_origin.get(sn, False):
+                enable_value = self._handle_unrequested_device(proc, sn, machine_cfg, runtime_cfg, axis_list, enable_value)
+                continue
+            enable_value |= 1 << device_bit
+            if machine_type == "H2D_XYservo":
+                self.xy_servo_planner.reset_motion_state(sn)
             if machine_type == "xn_updown4":
                 self.xn_updown4_planner.reset_motion_state(sn)
             if machine_type == "xn_updown2":

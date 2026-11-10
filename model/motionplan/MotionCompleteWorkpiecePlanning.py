@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from model.motionplan.motionutil.DeviceEnableHelper import final_operate, requested_operate
+
 from model.motionplan.motionutil.DeviceQueueHelper import DeviceQueueHelper
 from model.motionplan.MachineAxisMap import apply_device_axes_to_list
 from model.motionplan.MotionCleaningPlanning import MotionCleaningPlanning
@@ -43,11 +45,11 @@ class MotionCompleteWorkpiecePlanning:
         stop_chain = False
 
         # 获取使能状态：Operate 的 bit0
-        plc_enable = (proc.plc_data.Operate & 0x01) == 1
+        plc_enable = (requested_operate(proc) & 0x01) == 1
         axis_list = create_axis_list()
         # 检查伺服状态
         servo_alarm = proc.plc_data.Status != 1
-        operate_u16 = proc.plc_data.Operate & 0xFFFF
+        operate_u16 = requested_operate(proc) & 0xFFFF
         logger.debug(f"plc_enable={plc_enable}, servo_alarm={servo_alarm}, Operate={operate_u16}, {operate_u16:016b}")
         lidar_abnormal = int(getattr(proc, "lidar_status", 0) or 0) in (1, 2, 3)
         force_disable_all = (not plc_enable) or servo_alarm or lidar_abnormal
@@ -56,7 +58,7 @@ class MotionCompleteWorkpiecePlanning:
             stop_chain = True
 
         # 外二维运动
-        effective_operate = 0 if force_disable_all else proc.plc_data.Operate
+        effective_operate = 0 if force_disable_all else requested_operate(proc)
         clean_mode_enabled, clean_mode_ready = self._resolve_clean_mode_state(proc, force_disable_all)
         clean_mode_just_closed = self._is_clean_mode_just_closed(proc, clean_mode_enabled)
         if clean_mode_enabled and clean_mode_ready:
@@ -126,7 +128,7 @@ class MotionCompleteWorkpiecePlanning:
 
                 # 更新设备回原点状态
                 proc.device_origin_complete[sn] = all_ready
-                if not all_ready:
+                if should_return_safe and not all_ready:
                     enable_value |= 1 << device_bit
 
             # 设备运动已开启 → 执行自动运动逻辑
@@ -166,28 +168,39 @@ class MotionCompleteWorkpiecePlanning:
         if not force_disable_all:
             enable_value |= 0x01
         # 保存当前 Operate 状态作为下一次的 last_operate_state
-        proc.last_operate_state = proc.plc_data.Operate
+        proc.last_operate_state = requested_operate(proc)
 
         moving_frame.AxisList = axis_list
-        moving_frame.Operate = enable_value
+        moving_frame.Operate = final_operate(requested_operate(proc), enable_value)
         moving_frame.Gun_cont1 = 0
         moving_frame.Gun_cont2 = 0
         moving_frame.HeartBeat = proc.plc_data.HeartBeat
         moving_frame.Control = 0 if stop_chain else 0x02
         # bit15 反映完整工件队列中有无工件，与设备使能和停链状态无关。
         if self.cleaning_planner.has_any_workpiece(proc.frame_queue_manager):
-            moving_frame.Control |= 1 << 15
+            moving_frame.Control = (moving_frame.Control | 0x8000) - 0x10000  # Int16 保留 bit15，按有符号值序列化。
         # logger.info(f"生成 SendMovingFrameData: Operate={moving_frame.Operate:032b}, Control={moving_frame.Control}")
         return moving_frame
 
     def _resolve_clean_mode_state(self, proc, force_disable_all):
-        clean_mode_enabled = (not force_disable_all) and self.cleaning_planner.is_clean_mode_enabled(proc.plc_data.Operate)
+        clean_mode_enabled = (not force_disable_all) and self.cleaning_planner.is_clean_mode_enabled(requested_operate(proc))
         clean_mode_ready = clean_mode_enabled and not self.cleaning_planner.has_any_workpiece(proc.frame_queue_manager)
         if clean_mode_enabled and not clean_mode_ready:
             self.cleaning_planner.log_clean_mode_blocked()
         return clean_mode_enabled, clean_mode_ready
 
     def _handle_clean_mode_device(self, proc, sn, machine_cfg, runtime_cfg, clean_mode_ready, axis_list, enable_value):
+        if not requested_operate(proc) & (1 << (sn + 1)):
+            returning = proc.device_returning_to_origin.get(sn, False) or bool(proc.last_operate_state & (1 << (sn + 1)))
+            if returning:
+                commands, ready = self.motion_to_target.move_to_origin_safe(machine_cfg, runtime_cfg, proc.plc_data)
+                proc.device_returning_to_origin[sn] = not ready
+                proc.device_origin_complete[sn] = ready
+            else:
+                commands, ready = self.motion_to_target.hold_current_position(machine_cfg, proc.plc_data), True
+            if commands:
+                apply_device_axes_to_list(proc.machine_config, sn, commands, axis_list)
+            return enable_value | ((1 << (sn + 1)) if returning and not ready else 0)
         proc.device_returning_to_origin[sn] = False
         proc.device_origin_complete[sn] = False
         axis_cmds = self.cleaning_planner.build_device_axis_cmds(machine_cfg, runtime_cfg, clean_mode_ready)

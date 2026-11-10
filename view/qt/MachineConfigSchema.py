@@ -133,6 +133,7 @@ def parameter_order(sn: int, config: dict, strategy_name: str) -> list[tuple[str
     if strategy_name == "frame_by_frame":
         keys = {"inout_up": INOUT_UP_PARAM_KEYS,
                 "inout_down": INOUT_DOWN_PARAM_KEYS,
+                "H2D_XYservo": OUT_2D_SERVO_PARAM_KEYS,
                 "2d_servo": OUT_2D_SERVO_PARAM_KEYS,
                 "xn_updown4": XN_UPDOWN4_PARAM_KEYS,
                 "xn_updown2": XN_UPDOWN2_PARAM_KEYS,

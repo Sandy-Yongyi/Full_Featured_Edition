@@ -218,7 +218,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
             self.continuous_scan = ContinuousLidarScan(self.read_data_config, self.runtime_spray_config)
             self.continuous_bidirectional_planner = MotionContinuousBidirectionalPlanning()
             self.frame_queue_manager = self._create_frame_queue_manager()
-            self._initialize_device_runtime_state(return_to_safe=True)
+            self._initialize_device_runtime_state(return_to_safe=False)
             self.continuous_scan_pending = False
             self.continuous_lidar_ready = False
             self.continuous_reported_error = ""
@@ -359,7 +359,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
             self._update_enable_value()
             check_and_rotate_log()
             # 处理数据发送，发送给PLC
-            moving_frame = self._apply_device_enable(self._axis_to_moving_frame())
+            moving_frame = self._axis_to_moving_frame()
             if not self.simulation_mode:
                 # logger.info(f"PLC Operate=0b{int(self.plc_data.Operate):016b}")
                 logger.debug(f"moving now send moving_frame {moving_frame}")
@@ -972,11 +972,6 @@ class PlcCommunicationProcess(multiprocessing.Process):
         if is_complete_workpiece_mode(self.strategy_name):
             return self.complete_workpiece_planner.build_moving_frame(self)
         return self.frame_by_frame_motion_planner.build_moving_frame(self)
-
-    def _apply_device_enable(self, frame):
-        mask = int(getattr(self, "device_enable_mask", 0)) & 127
-        frame.Operate = mask if mask & 1 else 0
-        return frame
 
     def after_spray_complete(self, direction: str, sn: int):
         """喷涂完成后删除当前工件，并同步维护 complete_workpiece 的位置跟踪标记。"""

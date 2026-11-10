@@ -26,6 +26,7 @@ INT16_MAX = 32767
 
 
 AXIS_LIMIT_KEY: dict[str, dict[str, int]] = {
+    "H2D_XYservo": {"y": 0, "x": 1},
     "xn_rotate": {"z": 0, "y": 1, "x": 2, "r": 3},
     "z_2d_lift": {"y": 0, "x": 1},
 }
@@ -83,6 +84,10 @@ def get_axis_safe_pos(machine_cfg: dict, axis_name: str, default: int = 0) -> in
 
 
 MACHINE_AXIS_MAP = {
+    "H2D_XYservo": {
+        "left": dict(y=2, x=3),
+        "right": dict(y=4, x=5),
+    },
     # 第三模式：同侧两台设备共用Z，但仅xn_rotate拥有Z指令写入权。
     "xn_rotate": {
         "left": dict(z=0, y1=12, x1=13, r1=14, y2=6, x2=7, r2=8),

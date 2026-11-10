@@ -80,6 +80,7 @@ class PipelineRuntime:
         self.data_processor = None
         self.file_loader = None
         self.running = False
+        self._requested_device_enable_mask = 0
         self._faults: list[str] = []
         self.filter = DataFilter()
         self.collector = RuntimeStateCollector(self.log_queue, self.filter, float(self.read_data_config.get("point_cloud_preview_voxel_mm", 10)))
@@ -112,6 +113,7 @@ class PipelineRuntime:
             except (OSError, ValueError) as exc:
                 raise ValueError(f"设备配置无法加载：{machine_path}；{exc}") from exc
         self._ui_feedback.clear()
+        self._requested_device_enable_mask = 0
         self.ui_status_queue = multiprocessing.Queue(maxsize=32)
         self._faults.clear()
         if self.control_type != 3:
@@ -266,7 +268,9 @@ class PipelineRuntime:
             lidar_online, lidar_detail = False, "TXT 联调 · 不启用激光"
         plc_feedback = self._ui_feedback.get("plc", {})
         snapshot["chain_speed_mm_s"] = float(plc_feedback["chain_speed_mm_s"]) if plc_online and "chain_speed_mm_s" in plc_feedback else None
-        snapshot["device_enable_mask"] = int(plc_feedback.get("device_enable_mask", 0)) if plc_online else 0
+        if not plc_online:
+            self._requested_device_enable_mask = 0
+        snapshot["device_enable_mask"] = self._requested_device_enable_mask
         feedback_task = plc_feedback.get("task")
         snapshot["task"] = feedback_task if plc_online and isinstance(feedback_task, TaskState) else TaskState(stage="等待 PLC 任务反馈" if self.running else "待机")
         if plc_online:
@@ -293,6 +297,9 @@ class PipelineRuntime:
         if self.control_type == 3:
             raise RuntimeError("文件查看模式不能发送设备命令")
         self.control_queue.put(command)
+        if "device_enable_mask" in command:
+            mask = int(command["device_enable_mask"]) & 0x7F
+            self._requested_device_enable_mask = mask if mask & 1 else 0
 
     def is_password_required(self) -> bool:
         if self.control_type == 3:

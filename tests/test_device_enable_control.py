@@ -17,7 +17,7 @@ class DeviceEnableTests(unittest.TestCase):
 
     def test_worker_interlock_and_command_frame(self):
         from control.PlcCommunicationProcess import PlcCommunicationProcess
-        from model.plc.MovingFrameData import SendMovingFrameData
+        from model.motionplan.motionutil.DeviceEnableHelper import requested_operate
         p = PlcCommunicationProcess.__new__(PlcCommunicationProcess)
         p.control_queue = queue.Queue()
         p.control_queue.put({'device_enable_mask': 126})
@@ -26,12 +26,11 @@ class DeviceEnableTests(unittest.TestCase):
         p.control_queue.put({'device_enable_mask': 127})
         p._update_enable_value()
         self.assertEqual(127, p.device_enable_mask)
-        frame = p._apply_device_enable(SendMovingFrameData(Operate=1, Control=2))
-        self.assertEqual(127, frame.Operate)
-        self.assertEqual(2, frame.Control)
+        p.plc_data = SimpleNamespace(Operate=0)
+        self.assertEqual(127, requested_operate(p))
         p.control_queue.put({'device_enable_mask': 0})
         p._update_enable_value()
-        self.assertEqual(0, p._apply_device_enable(frame).Operate)
+        self.assertEqual(0, requested_operate(p))
 
     def test_controller_rejects_offline_commands(self):
         from control.ControlCenter import ControlCenter
@@ -69,9 +68,11 @@ class DeviceEnableTests(unittest.TestCase):
         self.assertEqual(1, sent[-1])
         page.device_buttons[0].click()
         self.assertEqual(3, sent[-1])
+        self.assertIn("#12613f", page.device_buttons[0].styleSheet())
         page.enable_button.click()
         self.assertEqual(0, sent[-1])
         self.assertTrue(all(not b.isChecked() and not b.isEnabled() for b in page.device_buttons))
+        self.assertNotIn("#12613f", page.device_buttons[0].styleSheet())
         for button in page.device_buttons:
             button.click()
         self.assertEqual(0, sent[-1])

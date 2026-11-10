@@ -85,15 +85,15 @@ safe_pos = [0, 0]                            # Y, X
 
 [2]
 sn = 2
-type = "2d_servo"
+type = "H2D_XYservo"
 x_position = 1085
 z_position = 2000
-spray_num = 2
+spray_num = 3
 tracking = 0
 y_move_min = 0
 y_move_max = 300
 axis_type = ["y", "x"]
-spray_radius = 0
+spray_radius = 500
 x_status_offset = 100
 out_front_x_offset = 50
 out_after_x_offset = 50
@@ -122,12 +122,12 @@ top_chain_hold_enabled = false
 install_orietation = "left"
 max_limit_speed = [500, 500]                 # Y, X
 min_limit_pos = [0, 0]                       # Y, X
-max_limit_pos = [600, 750, 1000, 750]        # Y1, X1, Y2, X2
-origin_pos = [1020, 2500]                    # Y1, Y2
+max_limit_pos = [1600, 1200]                 # Y, X
+origin_pos = [1300]
 safe_pos = [0, 0]                            # Y, X
 
 [3]
-sn = 0
+sn = 3
 type = "inout_up"
 x_position = 1085
 z_position = 2000
@@ -169,7 +169,7 @@ origin_pos = [1020, 2500]                    # Y1, Y2
 safe_pos = [0, 0]                            # Y, X
 
 [4]
-sn = 1
+sn = 4
 type = "inout_down"
 x_position = 0
 z_position = 3000
@@ -212,16 +212,16 @@ origin_pos = [1300]
 safe_pos = [0, 0]                            # Y, X
 
 [5]
-sn = 2
-type = "2d_servo"
+sn = 5
+type = "H2D_XYservo"
 x_position = 1085
 z_position = 2000
-spray_num = 2
+spray_num = 3
 tracking = 0
 y_move_min = 0
 y_move_max = 300
 axis_type = ["y", "x"]
-spray_radius = 0
+spray_radius = 500
 x_status_offset = 100
 out_front_x_offset = 50
 out_after_x_offset = 50
@@ -250,6 +250,6 @@ top_chain_hold_enabled = false
 install_orietation = "right"
 max_limit_speed = [500, 500]                 # Y, X
 min_limit_pos = [0, 0]                       # Y, X
-max_limit_pos = [600, 750, 1000, 750]        # Y1, X1, Y2, X2
-origin_pos = [1020, 2500]                    # Y1, Y2
+max_limit_pos = [1600, 1200]                 # Y, X
+origin_pos = [1300]
 safe_pos = [0, 0]                            # Y, X

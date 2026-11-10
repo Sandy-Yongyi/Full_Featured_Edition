@@ -1,3 +1,6 @@
+import copy
+
+from model.motionplan.motionutil.DeviceEnableHelper import final_operate, requested_operate
 from model.motionplan.MachineAxisMap import apply_device_axes_to_list
 from model.motionplan.MotionCleaningPlanning import MotionCleaningPlanning
 from model.motionplan.MotionToTarget import MotionToTarget
@@ -14,12 +17,14 @@ class MotionContinuousBidirectionalPlanning:
 
     def build_moving_frame(self, proc) -> SendMovingFrameData:
         """生成包含激光轴、工位放行和全部喷涂设备轴的PLC运动帧。"""
-        clean_mode_requested = self.cleaning_planner.is_clean_mode_enabled(proc.plc_data.Operate)
+        clean_mode_requested = self.cleaning_planner.is_clean_mode_enabled(requested_operate(proc))
         if proc.continuous_scan.stage != "fault" and not clean_mode_requested:
             proc.frame_queue_manager.update_continuous_stations(int(proc.plc_data.Status))
 
         allow_scan = proc.frame_queue_manager.continuous_slot_empty(0) and not proc.continuous_scan_pending and not clean_mode_requested
-        moving_frame = proc.continuous_scan.update(proc.plc_data, ready=proc.continuous_lidar_ready and proc.lidar_status == 0, allow_scan=allow_scan)
+        scan_feedback = copy.copy(proc.plc_data)
+        scan_feedback.Operate = requested_operate(proc)
+        moving_frame = proc.continuous_scan.update(scan_feedback, ready=proc.continuous_lidar_ready and proc.lidar_status == 0, allow_scan=allow_scan)
 
         if proc.continuous_scan.stage == "scanning":
             proc.continuous_scan_pending = True
@@ -30,7 +35,7 @@ class MotionContinuousBidirectionalPlanning:
     def _build_device_safe_motion(self, proc, moving_frame: SendMovingFrameData):
         """生成安全回位或清理指令，不修改激光轴。"""
         plc_status = int(proc.plc_data.Status or 0)
-        plc_operate = int(proc.plc_data.Operate or 0)
+        plc_operate = requested_operate(proc)
         plc_enable = bool(plc_operate & 0x01)
         servo_alarm = not bool(plc_status & 0x01)
         lidar_abnormal = int(getattr(proc, "lidar_status", 0) or 0) in (1, 2, 3)
@@ -54,7 +59,7 @@ class MotionContinuousBidirectionalPlanning:
             device_just_closed = last_device_operate and not device_operate_enabled
             should_return_safe = proc.device_returning_to_origin.get(sn, False) or device_just_closed or clean_mode_just_closed
 
-            if clean_mode_enabled:
+            if clean_mode_enabled and device_operate_enabled:
                 axis_cmds = self.cleaning_planner.build_device_axis_cmds(machine_cfg, runtime_cfg, clean_mode_ready)
                 all_ready = False
                 proc.device_returning_to_origin[sn] = False
@@ -64,7 +69,7 @@ class MotionContinuousBidirectionalPlanning:
                 axis_cmds, all_ready = self.motion_to_target.move_to_origin_safe(machine_cfg, runtime_cfg, proc.plc_data)
                 proc.device_origin_complete[sn] = bool(all_ready)
                 proc.device_returning_to_origin[sn] = not bool(all_ready)
-                if not force_disable_all and (device_operate_enabled or not all_ready):
+                if device_operate_enabled or not all_ready:
                     device_operate |= 1 << device_bit
             else:
                 axis_cmds = self.motion_to_target.hold_current_position(machine_cfg, proc.plc_data)
@@ -74,7 +79,7 @@ class MotionContinuousBidirectionalPlanning:
                 apply_device_axes_to_list(proc.machine_config, sn, axis_cmds, moving_frame.AxisList)
 
         # Operate的bit0由激光状态机生成，bit1至bit4由设备运动规划生成。
-        moving_frame.Operate = (int(moving_frame.Operate) & 0x01) | device_operate
+        moving_frame.Operate = final_operate(plc_operate, device_operate)
         proc.last_operate_state = plc_operate
         logger.debug("Continuous motion frame: servo_alarm=%s, cleaning=%s, cleaning_ready=%s, Operate=%s", servo_alarm, clean_mode_enabled, clean_mode_ready, moving_frame.Operate)
 

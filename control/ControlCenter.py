@@ -180,6 +180,7 @@ class ControlCenter:
             raise RuntimeError("设备控制未接入")
         mask = mask if mask & 1 else 0
         self._send_control({"device_enable_mask": mask})
+        self._state = self._replace_state(device_enable_mask=mask)
 
     def _replace_state(self, **changes: Any) -> UiState:
         return UiState(**{field: changes.get(field, getattr(self._state, field)) for field in UiState.__dataclass_fields__})

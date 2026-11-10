@@ -93,7 +93,8 @@ class MotionContinuousBidirectionalPlanningTest(unittest.TestCase):
 
         self.assertEqual(proc.num_devices, 4)
         self.assertEqual(set(proc.runtime_machine_config), {0, 1, 2, 3})
-        self.assertEqual(proc.device_returning_to_origin, {0: True, 1: True, 2: True, 3: True})
+        self.assertEqual(proc.device_returning_to_origin, {0: False, 1: False, 2: False, 3: False})
+        self.assertEqual(0, proc.device_enable_mask)
 
     def test_builds_all_device_safe_commands_without_overwriting_lidar_axes(self):
         proc = _build_proc()
