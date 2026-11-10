@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QScrollArea, QTabWidget, QVBoxLayout, QWidget
 
 from control.UiState import UiState
@@ -44,6 +43,8 @@ class RealtimeControlPage(QWidget):
             checkbox.toggled.connect(lambda checked, layer=key: self.point_cloud_view.set_layer_visible(layer, checked))
             self.layer_controls[key] = checkbox
             layers.addWidget(checkbox)
+        self._layer_strategy = None
+        self._update_layer_controls(getattr(controller, "strategy_name", "frame_by_frame"))
         layers.addStretch(1)
         self.point_count = QLabel("0 点")
         layers.addWidget(self.point_count)
@@ -107,7 +108,15 @@ class RealtimeControlPage(QWidget):
         except Exception as exc:
             self.chain_status.setText(f"停止失败：{exc}")
 
+    def _update_layer_controls(self, strategy_name: str) -> None:
+        if strategy_name == self._layer_strategy:
+            return
+        self._layer_strategy = strategy_name
+        for key in ("outside", "inside", "jig"):
+            self.layer_controls[key].setVisible(strategy_name == "complete_workpiece")
+
     def apply_state(self, state: UiState) -> None:
+        self._update_layer_controls(state.strategy_name)
         self.chain_position.setText(f"当前位置  {state.chain_position} pulse")
         self.chain_status.setText(state.chain_status)
         speed = "待反馈" if state.chain_speed_mm_s is None else f"{state.chain_speed_mm_s * 0.06:.2f} m/min"
@@ -146,14 +155,14 @@ class DeviceControlPage(QWidget):
         self.enable_button = ControlButton("设备总使能")
         self.enable_button.setCheckable(True)
         self.enable_button.clicked.connect(self._send)
-        panel.content_layout.addWidget(self.enable_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.device_grid = QGridLayout()
         self.device_grid.setHorizontalSpacing(theme.ui_px(20))
         self.device_grid.setVerticalSpacing(theme.ui_px(10))
+        self.device_grid.addWidget(self.enable_button, 0, 0)
         for column, title in enumerate(("左侧设备", "右侧设备")):
             label = QLabel(title)
             label.setStyleSheet(f"font-weight: 700; color: {theme.CYAN};")
-            self.device_grid.addWidget(label, 0, column)
+            self.device_grid.addWidget(label, 1, column)
             self.device_grid.setColumnStretch(column, 1)
         self.device_buttons = []
         for index, name in enumerate(self.DEVICE_NAMES):
@@ -161,7 +170,7 @@ class DeviceControlPage(QWidget):
             button.setCheckable(True)
             button.clicked.connect(self._send)
             self.device_buttons.append(button)
-            self.device_grid.addWidget(button, index % 3 + 1, index // 3)
+            self.device_grid.addWidget(button, index % 3 + 2, index // 3)
         panel.content_layout.addLayout(self.device_grid)
         self.result = QLabel("等待 PLC 通讯")
         self.result.setWordWrap(True)
@@ -196,7 +205,7 @@ class DeviceControlPage(QWidget):
             if self.enable_button.isChecked():
                 mask = 1 | sum(1 << i for i, b in enumerate(self.device_buttons, 1) if b.isChecked())
             self.controller.set_device_enable_mask(mask)
-            self.result.setText(f"已提交 Enable={mask}；等待软件发送状态更新。")
+            self.result.setText(f"已提交 Operate={mask}；等待软件发送状态更新。")
         except Exception as exc:
             self._set_mask(self._last_mask or 0)
             self.result.setText(f"控制失败：{exc}")

@@ -210,14 +210,11 @@ if __name__ == "__main__":
                 logger.info(f"    Axis[{idx}]: Pos={axis.Pos}, Speed={axis.Speed}, Status={axis.Status}")
 
             send_frame = SendMovingFrameData()
-            # recv_heartbeat = receive_frame.Operate & HEARTBEAT_BIT
-            # logger.info(f"Received heartbeat: {recv_heartbeat}, HEARTBEAT_BIT: {HEARTBEAT_BIT}")
-            # send_frame.Enable = (send_frame.Enable & ~HEARTBEAT_BIT) | recv_heartbeat
-            send_frame.Enable = receive_frame.Operate
+            send_frame.Operate = receive_frame.Operate
             plc.send_frame(send_frame)
             logger.info(
-                f"Frame sent: Enable={send_frame.Enable}, Gun_cont1={send_frame.Gun_cont1}, "
-                f"Gun_cont2={send_frame.Gun_cont2}, Operate={send_frame.Operate}, "
+                f"Frame sent: Operate={send_frame.Operate}, Gun_cont1={send_frame.Gun_cont1}, "
+                f"Gun_cont2={send_frame.Gun_cont2}, Control={send_frame.Control}, "
                 f"AxisCount={len(send_frame.AxisList)}"
             )
 

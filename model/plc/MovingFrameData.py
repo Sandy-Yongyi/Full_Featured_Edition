@@ -29,11 +29,11 @@ class SendMovingFrameData(PlcFrame):
     """发送帧数据结构。"""
     BYTE_ORDER = _BYTE_ORDER
     FRAME_SIZE: ClassVar[int] = 134
-    Enable: Annotated[int, Int32()] = 0        # bit0=使能, bit1=左侧内外顶, bit2=左侧内外底, bit3=左侧二维, bit4=右侧内外顶, bit5=右侧内外底, bit6=右侧二维
+    Operate: Annotated[int, Int32()] = 0       # bit0=使能, bit1=左侧内外顶, bit2=左侧内外底, bit3=左侧二维, bit4=右侧内外顶, bit5=右侧内外底, bit6=右侧二维
     Gun_cont1: Annotated[int, Int32()] = 0     # 开枪控制1（保留）
     Gun_cont2: Annotated[int, Int32()] = 0     # 开枪控制2（保留）
     HeartBeat: Annotated[int, Int16()] = 0     # 心跳递增：最大值30000 重置0
-    Operate: Annotated[int, Int16()] = 0       # 远程操作位（bit1=1链条运动）bit0保留不用
+    Control: Annotated[int, Int16()] = 0       # 远程操作位（bit1=1链条运动）bit0保留不用
     AxisList: Annotated[list[AxisData], Repeat(AXIS_LIST_COUNT)] = field(default_factory=create_axis_list)
 
 

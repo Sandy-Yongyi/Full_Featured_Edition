@@ -8,6 +8,17 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 class LayerTests(unittest.TestCase):
+    def test_region_controls_only_show_for_complete_workpiece_strategy(self):
+        from control.UiState import UiState
+        from view.qt.pages import RealtimeControlPage
+        page = RealtimeControlPage(SimpleNamespace(strategy_name="frame_by_frame"))
+        self.assertFalse(page.layer_controls["points"].isHidden())
+        self.assertTrue(all(page.layer_controls[key].isHidden() for key in ("outside", "inside", "jig")))
+        for strategy in ("complete_workpiece", "frame_by_frame", "continuous_bidirectional", "complete_workpiece"):
+            page.apply_state(UiState.empty(strategy))
+            for key in ("outside", "inside", "jig"):
+                self.assertEqual(strategy != "complete_workpiece", page.layer_controls[key].isHidden())
+
     @classmethod
     def setUpClass(cls):
         from PyQt6.QtWidgets import QApplication

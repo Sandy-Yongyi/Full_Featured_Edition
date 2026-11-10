@@ -4,6 +4,17 @@ from types import SimpleNamespace
 
 
 class DeviceEnableTests(unittest.TestCase):
+    def test_new_operate_and_control_fields_serialize_independently(self):
+        import struct
+        from model.plc.MovingFrameData import SendMovingFrameData
+        frame = SendMovingFrameData(Operate=127, Control=2, HeartBeat=123)
+        raw = frame.to_bytes()
+        self.assertEqual(127, struct.unpack_from('>i', raw, 0)[0])
+        self.assertEqual(2, struct.unpack_from('>h', raw, 14)[0])
+        restored, _ = SendMovingFrameData.from_bytes(raw)
+        self.assertEqual((127, 2, 123), (restored.Operate, restored.Control, restored.HeartBeat))
+        self.assertFalse(hasattr(frame, 'Enable'))
+
     def test_worker_interlock_and_command_frame(self):
         from control.PlcCommunicationProcess import PlcCommunicationProcess
         from model.plc.MovingFrameData import SendMovingFrameData
@@ -15,11 +26,12 @@ class DeviceEnableTests(unittest.TestCase):
         p.control_queue.put({'device_enable_mask': 127})
         p._update_enable_value()
         self.assertEqual(127, p.device_enable_mask)
-        frame = p._apply_device_enable(SendMovingFrameData(Enable=1))
-        self.assertEqual(127, frame.Enable)
+        frame = p._apply_device_enable(SendMovingFrameData(Operate=1, Control=2))
+        self.assertEqual(127, frame.Operate)
+        self.assertEqual(2, frame.Control)
         p.control_queue.put({'device_enable_mask': 0})
         p._update_enable_value()
-        self.assertEqual(0, p._apply_device_enable(frame).Enable)
+        self.assertEqual(0, p._apply_device_enable(frame).Operate)
 
     def test_controller_rejects_offline_commands(self):
         from control.ControlCenter import ControlCenter
@@ -50,7 +62,7 @@ class DeviceEnableTests(unittest.TestCase):
         page.apply_state(state)
         self.assertTrue(all(not b.isEnabled() for b in page.device_buttons))
         for index, button in enumerate(page.device_buttons):
-            self.assertIs(page.device_grid.itemAtPosition(index % 3 + 1, index // 3).widget(), button)
+            self.assertIs(page.device_grid.itemAtPosition(index % 3 + 2, index // 3).widget(), button)
             button.click()
         self.assertEqual([], sent)
         page.enable_button.click()

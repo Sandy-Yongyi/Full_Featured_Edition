@@ -29,7 +29,7 @@ class MotionCompleteWorkpiecePlanning:
         2. 当使能打开时，需要判断 Status 是否为 1（伺服正常）
            - 如果伺服报警（Status != 1），所有设备回原点
            - 如果伺服正常，根据 Operate 的各设备位来控制设备运动
-        3. 根据设备的回原点状态设置 Enable 的对应位：
+        3. 根据设备的回原点状态设置 Operate 的对应位：
            - 如果设备全部轴回0，对应位发 0
            - 如果设备轴未回0，对应位发 1
         4. 将所有设备的轴数据拼接到 AxisList 中
@@ -161,7 +161,7 @@ class MotionCompleteWorkpiecePlanning:
                 if done and direction:
                     proc.after_spray_complete(direction, sn)
 
-                # 设备正在运动，Enable 对应位发1
+                # 设备正在运动，Operate 对应位发1
                 enable_value |= 1 << device_bit
         if not force_disable_all:
             enable_value |= 0x01
@@ -169,15 +169,15 @@ class MotionCompleteWorkpiecePlanning:
         proc.last_operate_state = proc.plc_data.Operate
 
         moving_frame.AxisList = axis_list
-        moving_frame.Enable = enable_value
+        moving_frame.Operate = enable_value
         moving_frame.Gun_cont1 = 0
         moving_frame.Gun_cont2 = 0
         moving_frame.HeartBeat = proc.plc_data.HeartBeat
-        moving_frame.Operate = 0 if stop_chain else 0x02
+        moving_frame.Control = 0 if stop_chain else 0x02
         # bit15 反映完整工件队列中有无工件，与设备使能和停链状态无关。
         if self.cleaning_planner.has_any_workpiece(proc.frame_queue_manager):
-            moving_frame.Operate |= 1 << 15
-        # logger.info(f"生成 SendMovingFrameData: Enable={moving_frame.Enable:032b}, Operate={moving_frame.Operate}")
+            moving_frame.Control |= 1 << 15
+        # logger.info(f"生成 SendMovingFrameData: Operate={moving_frame.Operate:032b}, Control={moving_frame.Control}")
         return moving_frame
 
     def _resolve_clean_mode_state(self, proc, force_disable_all):

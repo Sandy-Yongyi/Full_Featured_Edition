@@ -975,7 +975,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
 
     def _apply_device_enable(self, frame):
         mask = int(getattr(self, "device_enable_mask", 0)) & 127
-        frame.Enable = mask if mask & 1 else 0
+        frame.Operate = mask if mask & 1 else 0
         return frame
 
     def after_spray_complete(self, direction: str, sn: int):
