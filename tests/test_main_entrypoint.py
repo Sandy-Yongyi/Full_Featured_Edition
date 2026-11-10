@@ -11,12 +11,12 @@ class MainEntrypointTests(unittest.TestCase):
     def test_code_settings_in_main_are_forwarded_to_qt_startup(self):
         import main
         with patch.multiple(main, CONTROL_TYPE=3, DATA_PATH=r"D:\clouds", DATA_NAME="sample.txt", create=True), \
-                patch("qt_main.main", return_value=17) as start:
+                patch("model.runtime.qt_main.main", return_value=17) as start:
             self.assertEqual(17, main.qt_main())
         start.assert_called_once_with(control_type=3, data_path=r"D:\clouds", data_name="sample.txt")
 
     def test_qt_controller_uses_project_configuration_from_another_working_directory(self):
-        from qt_main import build_controller
+        from model.runtime.qt_main import build_controller
         previous = Path.cwd()
         with tempfile.TemporaryDirectory() as directory:
             try:
@@ -27,7 +27,7 @@ class MainEntrypointTests(unittest.TestCase):
                 os.chdir(previous)
 
     def test_qt_public_entry_uses_the_same_guarded_launcher_as_main(self):
-        import qt_main
+        from model.runtime import qt_main
         with patch("main.main", return_value=9), patch("main.multiprocessing.freeze_support"), \
                 patch("main.multiprocessing.set_start_method"), patch("main.disable_console_interaction"):
             self.assertEqual(9, qt_main.launch())
@@ -35,9 +35,9 @@ class MainEntrypointTests(unittest.TestCase):
     def test_cold_entrypoint_imports_do_not_create_logs_in_callers_directory(self):
         root = Path(__file__).resolve().parents[1]
         script = (
-            "import sys; sys.path.insert(0, sys.argv[1]); import main, qt_main; "
+            "import sys; sys.path.insert(0, sys.argv[1]); import main; from model.runtime import qt_main; "
             "assert 'model.utils.LoggerUtil' not in sys.modules; "
-            "assert 'control.QtPipelineRuntime' not in sys.modules"
+            "assert 'control.PipelineRuntime' not in sys.modules"
         )
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run([sys.executable, "-B", "-c", script, str(root)], cwd=directory, capture_output=True, text=True, timeout=15)

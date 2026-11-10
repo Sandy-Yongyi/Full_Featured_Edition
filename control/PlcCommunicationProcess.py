@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import time
 import copy
@@ -21,7 +21,7 @@ from model.motionplan.MotionCompleteWorkpiecePlanning import MotionCompleteWorkp
 from model.utils.ProcessHeartbeat import ProcessHeartbeat
 from model.utils.UiTelemetry import UiStatusPublisher
 from model.utils.UiTaskFeedback import build_task_summary
-from control.UiState import TaskState
+from model.telemetry.UiState import TaskState
 from model.motionplan.ContinuousLidarScan import ContinuousLidarScan
 from model.motionplan.MotionContinuousBidirectionalPlanning import MotionContinuousBidirectionalPlanning
 

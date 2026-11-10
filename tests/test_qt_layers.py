@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 class LayerTests(unittest.TestCase):
     def test_region_controls_only_show_for_complete_workpiece_strategy(self):
-        from control.UiState import UiState
+        from model.telemetry.UiState import UiState
         from view.qt.pages import RealtimeControlPage
         page = RealtimeControlPage(SimpleNamespace(strategy_name="frame_by_frame"))
         self.assertFalse(page.layer_controls["points"].isHidden())
@@ -54,7 +54,7 @@ class LayerTests(unittest.TestCase):
         self.assertEqual(24, len(view.box_vertices))
 
     def test_layer_choice_survives_new_frame_and_page_shows_point_count(self):
-        from control.UiState import UiState
+        from model.telemetry.UiState import UiState
         from view.qt.pages import RealtimeControlPage
         page = RealtimeControlPage(SimpleNamespace())
         points = np.ones((123, 3))

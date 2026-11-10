@@ -17,12 +17,12 @@ from model.dataprocess.DataSplitting import DataSplitting
 from model.utils.LoggerUtil import logger, check_and_rotate_log
 from model.dataprocess.DataFilter import DataFilter
 from model.lidar.LidarDirectionState import LidarDirectionState
-from model.utils.PointCloudSaveBuffer import PointCloudSaveBuffer
+from model.pointcloud.PointCloudSaveBuffer import PointCloudSaveBuffer
 from model.utils.LidarDirectionUtil import filter_active_direction_map
 from model.utils.StrategyUtil import is_complete_workpiece_mode, is_continuous_bidirectional_mode, is_frame_by_frame_mode, validate_strategy_name
 from model.utils.ProcessHeartbeat import ProcessHeartbeat
 from model.utils.UiTelemetry import UiStatusPublisher
-from control.LidarAcquisitionStrategies import AcquisitionStrategyFactory
+from model.lidar.LidarAcquisitionStrategies import AcquisitionStrategyFactory
 
 
 class LidarAcquisitionProcess(multiprocessing.Process):

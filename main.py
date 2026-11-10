@@ -2,7 +2,7 @@ import os
 import sys
 import ctypes
 import multiprocessing
-from app_bootstrap import prepare_environment
+from model.runtime.app_bootstrap import prepare_environment
 
 
 # 开发调试只需修改这里，然后直接运行 main.py；交付时保持 CONTROL_TYPE = 2。
@@ -12,7 +12,7 @@ DATA_NAME = "combined_20260620_110503.txt"  # 目录内的数据集名称，例�
 
 
 def qt_main():
-    from qt_main import main as run_qt
+    from model.runtime.qt_main import main as run_qt
     return run_qt(control_type=CONTROL_TYPE, data_path=DATA_PATH, data_name=DATA_NAME)
 
 
@@ -75,7 +75,7 @@ def launch() -> int:
     multiprocessing.freeze_support()
     prepare_environment()
     if sys.argv[1:] == ["--check-deployment"]:
-        from deployment_check import main as check_deployment
+        from model.runtime.deployment_check import main as check_deployment
         return check_deployment()
     disable_console_interaction()
     if multiprocessing.get_start_method(allow_none=True) is None:

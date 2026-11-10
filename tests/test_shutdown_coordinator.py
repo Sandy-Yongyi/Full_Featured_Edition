@@ -1,7 +1,7 @@
 import threading
 import unittest
 
-from control.ShutdownCoordinator import ShutdownCoordinator
+from model.runtime.ShutdownCoordinator import ShutdownCoordinator
 
 
 class ShutdownCoordinatorTests(unittest.TestCase):

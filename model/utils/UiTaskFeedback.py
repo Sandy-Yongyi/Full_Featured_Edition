@@ -1,6 +1,6 @@
 """Read the current workpiece plan for display without consuming its queue."""
 
-from control.UiState import GunPlanState, TaskDetailState, TaskState
+from model.telemetry.UiState import GunPlanState, TaskDetailState, TaskState
 
 
 STAGES = {

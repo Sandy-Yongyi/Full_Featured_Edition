@@ -28,8 +28,8 @@ class DeveloperModesTests(unittest.TestCase):
         self.assertFalse(center._runtime.has_live_workers())
 
     def test_default_runtime_keeps_delivery_mode_two(self):
-        from control.QtPipelineRuntime import QtPipelineRuntime
-        self.assertEqual(2, getattr(QtPipelineRuntime(), "control_type", None))
+        from control.PipelineRuntime import PipelineRuntime
+        self.assertEqual(2, getattr(PipelineRuntime(), "control_type", None))
 
     def configure(self, root, strategy=2):
         config = root / "config"
@@ -41,16 +41,16 @@ class DeveloperModesTests(unittest.TestCase):
 
     def test_view_mode_loads_real_txt_into_qt_scene_without_device_or_save_workers(self):
         from PyQt6.QtWidgets import QApplication
-        from qt_main import build_controller
+        from model.runtime.qt_main import build_controller
         from view.qt.pages import RealtimeControlPage
         qt_app = QApplication.instance() or QApplication([])
         self.addCleanup(lambda: qt_app.processEvents())
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "sample.txt"
             path.write_text("0 0 0 255 0 0\n100 200 300 0 255 0\n", encoding="utf-8")
-            with patch("control.QtPipelineRuntime.PlcCommunicationProcess.create") as plc, \
-                    patch("control.QtPipelineRuntime.LidarAcquisitionProcess") as lidar, \
-                    patch("control.QtPipelineRuntime.PointCloudSaveService.from_config_file") as saving:
+            with patch("control.PipelineRuntime.PlcCommunicationProcess.create") as plc, \
+                    patch("control.PipelineRuntime.LidarAcquisitionProcess") as lidar, \
+                    patch("control.PipelineRuntime.PointCloudSaveService.from_config_file") as saving:
                 center = build_controller(control_type=3, data_path=str(path))
                 center._runtime.read_data_config["workpiece_origin_side"] = "left"
                 center.start()
@@ -81,11 +81,11 @@ class DeveloperModesTests(unittest.TestCase):
                     self.stop_center(center)
 
     def test_missing_file_is_rejected_before_plc_can_start(self):
-        from control.QtPipelineRuntime import QtPipelineRuntime
+        from control.PipelineRuntime import PipelineRuntime
         with tempfile.TemporaryDirectory() as directory:
             for control_type in (1, 3):
-                with self.subTest(control_type=control_type), patch("control.QtPipelineRuntime.PlcCommunicationProcess.create") as plc:
-                    runtime = QtPipelineRuntime(control_type=control_type, data_path=str(Path(directory) / "missing.txt"))
+                with self.subTest(control_type=control_type), patch("control.PipelineRuntime.PlcCommunicationProcess.create") as plc:
+                    runtime = PipelineRuntime(control_type=control_type, data_path=str(Path(directory) / "missing.txt"))
                     with self.assertRaises((ValueError, FileNotFoundError)):
                         runtime.start_pipeline()
                     self.assertFalse(runtime.running)
@@ -93,13 +93,13 @@ class DeveloperModesTests(unittest.TestCase):
                     plc.assert_not_called()
 
     def test_file_view_worker_uses_the_same_right_origin_as_live_and_txt_replay(self):
-        from control.QtPipelineRuntime import QtPipelineRuntime
+        from control.PipelineRuntime import PipelineRuntime
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = root / "sample.txt"
             contents = "100 10 0\n200 20 100\n"
             path.write_text(contents, encoding="utf-8")
-            runtime = QtPipelineRuntime(self.configure(root), control_type=3, data_path=str(path))
+            runtime = PipelineRuntime(self.configure(root), control_type=3, data_path=str(path))
             runtime.read_data_config.update(translate_data_origin=1, workpiece_origin_side="right", workpiece_origin_reference_x=1000)
             runtime.start_pipeline()
             try:
@@ -117,16 +117,16 @@ class DeveloperModesTests(unittest.TestCase):
                 runtime.stop_pipeline()
 
     def test_txt_plc_mode_restores_strategy_specific_workers_without_lidar_or_saving(self):
-        from control.QtPipelineRuntime import QtPipelineRuntime
+        from control.PipelineRuntime import PipelineRuntime
         for strategy, expected in ((1, 2), (2, 3)):
             with self.subTest(strategy=strategy), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 path = root / "combined_sample.txt"
                 path.write_text("0 0 0\n1 1 1\n", encoding="utf-8")
-                runtime = QtPipelineRuntime(self.configure(root, strategy), control_type=1, data_path=str(path))
+                runtime = PipelineRuntime(self.configure(root, strategy), control_type=1, data_path=str(path))
                 with patch("multiprocessing.Process.start"), \
-                        patch("control.QtPipelineRuntime.LidarAcquisitionProcess") as lidar, \
-                        patch("control.QtPipelineRuntime.PointCloudSaveService.from_config_file") as saving:
+                        patch("control.PipelineRuntime.LidarAcquisitionProcess") as lidar, \
+                        patch("control.PipelineRuntime.PointCloudSaveService.from_config_file") as saving:
                     runtime.start_pipeline()
                 self.assertEqual(expected, len(runtime.processes))
                 self.assertEqual("DataProcessWorker", type(runtime.processes[0]).__name__)
@@ -143,12 +143,12 @@ class DeveloperModesTests(unittest.TestCase):
                 saving.assert_not_called()
 
     def test_txt_plc_unsupported_strategy_is_rejected_before_any_worker_starts(self):
-        from control.QtPipelineRuntime import QtPipelineRuntime
+        from control.PipelineRuntime import PipelineRuntime
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = root / "combined_sample.txt"
             path.write_text("0 0 0\n", encoding="utf-8")
-            runtime = QtPipelineRuntime(self.configure(root, 3), control_type=1, data_path=str(path))
+            runtime = PipelineRuntime(self.configure(root, 3), control_type=1, data_path=str(path))
             with patch("multiprocessing.Process.start") as start:
                 with self.assertRaisesRegex(ValueError, "TXT.*1.*2"):
                     runtime.start_pipeline()
@@ -156,8 +156,8 @@ class DeveloperModesTests(unittest.TestCase):
             self.assertFalse(runtime.running)
 
     def test_view_mode_cannot_write_production_settings_or_send_control(self):
-        from control.QtPipelineRuntime import QtPipelineRuntime
-        runtime = QtPipelineRuntime(control_type=3, data_path="unused.txt")
+        from control.PipelineRuntime import PipelineRuntime
+        runtime = PipelineRuntime(control_type=3, data_path="unused.txt")
         with patch.object(runtime.configuration_service, "save_chain_speed") as save:
             with self.assertRaises(RuntimeError):
                 runtime.save_chain_speed(30)
@@ -166,7 +166,7 @@ class DeveloperModesTests(unittest.TestCase):
             save.assert_not_called()
 
     def test_malformed_txt_reports_error_and_stops_file_worker(self):
-        from qt_main import build_controller
+        from model.runtime.qt_main import build_controller
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "bad.txt"
             path.write_text("1 2\n", encoding="utf-8")
@@ -183,7 +183,7 @@ class DeveloperModesTests(unittest.TestCase):
                     self.stop_center(center)
 
     def test_directory_dataset_selection_and_mixed_rgb_inputs(self):
-        from control.PointCloudFileProcess import resolve_txt_files, load_txt_cloud
+        from model.pointcloud.PointCloudFileProcess import resolve_txt_files, load_txt_cloud
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "left_a.txt").write_text("1 2 3 255 0 0\n", encoding="utf-8")
@@ -214,14 +214,14 @@ class DeveloperModesTests(unittest.TestCase):
             self.assertEqual(2, len(frames.get_nowait()["points"]))
 
     def test_delivery_process_combinations_for_all_three_strategies_are_preserved(self):
-        from control.QtPipelineRuntime import QtPipelineRuntime
+        from control.PipelineRuntime import PipelineRuntime
         for strategy, expected in ((1, 3), (2, 4), (3, 3)):
             with self.subTest(strategy=strategy), tempfile.TemporaryDirectory() as directory:
-                runtime = QtPipelineRuntime(self.configure(Path(directory), strategy))
+                runtime = PipelineRuntime(self.configure(Path(directory), strategy))
                 saver = Mock()
                 saver.pool.descriptor = {}
                 with patch("multiprocessing.Process.start"), \
-                        patch("control.QtPipelineRuntime.PointCloudSaveService.from_config_file", return_value=saver):
+                        patch("control.PipelineRuntime.PointCloudSaveService.from_config_file", return_value=saver):
                     runtime.start_pipeline()
                 self.assertEqual(expected, len(runtime.processes))
                 self.assertIs(saver.worker, runtime.processes[0])
@@ -233,7 +233,7 @@ class DeveloperModesTests(unittest.TestCase):
     def test_developer_arguments_default_to_delivery_and_require_explicit_input(self):
         import contextlib
         import io
-        from qt_main import parse_launch_arguments
+        from model.runtime.qt_main import parse_launch_arguments
         self.assertEqual(2, parse_launch_arguments([]).control_type)
         args = parse_launch_arguments(["--control-type", "3", "--data-path", "cloud.txt"])
         self.assertEqual(3, args.control_type)
@@ -245,7 +245,7 @@ class DeveloperModesTests(unittest.TestCase):
                 self.assertEqual(2, error.exception.code)
 
     def test_code_defaults_work_without_arguments_and_explicit_cli_can_override_them(self):
-        from qt_main import parse_launch_arguments
+        from model.runtime.qt_main import parse_launch_arguments
         for mode in (1, 3):
             with self.subTest(mode=mode):
                 args = parse_launch_arguments([], control_type=mode, data_path=r"D:\clouds", data_name="sample.txt")
@@ -266,7 +266,7 @@ class DeveloperModesTests(unittest.TestCase):
 
     def test_view_window_uses_import_controls_and_readonly_configuration(self):
         from PyQt6.QtWidgets import QApplication
-        from qt_main import build_controller
+        from model.runtime.qt_main import build_controller
         from view.qt.main_window import IndustrialMainWindow
         qt_app = QApplication.instance() or QApplication([])
         self.addCleanup(lambda: qt_app.processEvents())
@@ -279,18 +279,18 @@ class DeveloperModesTests(unittest.TestCase):
         self.assertFalse(center.is_password_required())
 
     def test_all_modes_wait_for_manual_start_or_import(self):
-        import qt_main
-        __import__("control.QtUiBridge")
+        from model.runtime import qt_main
+        __import__("view.qt.QtUiBridge")
         for control_type in (1, 2, 3):
             arguments = ["main.py"]
             if control_type != 2:
                 arguments += ["--control-type", str(control_type), "--data-path", "cloud.txt"]
             with self.subTest(control_type=control_type), \
                     patch("sys.argv", arguments), \
-                    patch("qt_main.build_controller"), \
+                    patch("model.runtime.qt_main.build_controller"), \
                     patch("PyQt6.QtWidgets.QApplication") as application, \
                     patch("PyQt6.QtCore.QTimer") as timer, \
-                    patch("control.QtUiBridge.QtUiBridge"), \
+                    patch("view.qt.QtUiBridge.QtUiBridge"), \
                     patch("view.qt.main_window.IndustrialMainWindow") as window:
                 application.instance.return_value.exec.return_value = 17
                 self.assertEqual(17, qt_main.main())

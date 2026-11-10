@@ -5,9 +5,9 @@ import unittest
 
 import numpy as np
 
-from control.LidarAcquisitionProcess import LidarAcquisitionProcess
+from model.lidar.LidarAcquisitionProcess import LidarAcquisitionProcess
 from model.dataprocess.DataSplitting import DataSplitting
-from model.utils.PointCloudSaveBuffer import PointCloudSaveBuffer, SharedPointCloudPool, read_blocks
+from model.pointcloud.PointCloudSaveBuffer import PointCloudSaveBuffer, SharedPointCloudPool, read_blocks
 
 
 class AcquisitionSavingTests(unittest.TestCase):
@@ -93,7 +93,7 @@ class AcquisitionSavingTests(unittest.TestCase):
         self.assertEqual(len(self.process.direction_states["left"].xyz_data), 4)
 
     def test_three_modes_keep_their_own_coordinates_and_delivery_interfaces(self):
-        from control.LidarAcquisitionStrategies import AcquisitionStrategyFactory
+        from model.lidar.LidarAcquisitionStrategies import AcquisitionStrategyFactory
         for strategy in ("frame_by_frame", "complete_workpiece", "continuous_bidirectional"):
             for origin in (1, 2):
                 with self.subTest(strategy=strategy, origin=origin):
@@ -170,7 +170,7 @@ class AcquisitionSavingTests(unittest.TestCase):
         self.assertEqual(len(points), 2)
 
     def test_continuous_interrupted_pass_releases_blocks_and_is_not_saved(self):
-        from control.LidarAcquisitionStrategies import ContinuousBidirectionalStrategy
+        from model.lidar.LidarAcquisitionStrategies import ContinuousBidirectionalStrategy
         from model.lidar.LidarDirectionState import LidarDirectionState
         from model.utils.ProcessHeartbeat import ProcessHeartbeat
         self.process.strategy_name = "continuous_bidirectional"

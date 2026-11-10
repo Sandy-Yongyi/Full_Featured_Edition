@@ -1,0 +1,115 @@
+======================================================================
+ERROR: test_builds_all_device_safe_commands_without_overwriting_lidar_axes (test_motion_continuous_bidirectional_planning.MotionContinuousBidirectionalPlanningTest.test_builds_all_device_safe_commands_without_overwriting_lidar_axes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Code\Full_Featured_Edition\tests\test_motion_continuous_bidirectional_planning.py", line 101, in test_builds_all_device_safe_commands_without_overwriting_lidar_axes
+    frame = MotionContinuousBidirectionalPlanning().build_moving_frame(proc)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Code\Full_Featured_Edition\model\motionplan\MotionContinuousBidirectionalPlanning.py", line 22, in build_moving_frame
+    moving_frame = proc.continuous_scan.update(proc.plc_data, ready=proc.continuous_lidar_ready and proc.lidar_status == 0, allow_scan=allow_scan)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Code\Full_Featured_Edition\tests\test_motion_continuous_bidirectional_planning.py", line 31, in update
+    frame.AxisList[index] = AxisData(Pos=777, Speed=25, Status=0)
+    ~~~~~~~~~~~~~~^^^^^^^
+IndexError: list assignment index out of range
+
+======================================================================
+ERROR: test_clean_mode_moves_x_to_max_only_after_all_station_data_is_empty (test_motion_continuous_bidirectional_planning.MotionContinuousBidirectionalPlanningTest.test_clean_mode_moves_x_to_max_only_after_all_station_data_is_empty)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Code\Full_Featured_Edition\tests\test_motion_continuous_bidirectional_planning.py", line 131, in test_clean_mode_moves_x_to_max_only_after_all_station_data_is_empty
+    ready_frame = planner.build_moving_frame(_build_proc(operate=clean_bit | 0x01, occupied=False, x_limits=limits))
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Code\Full_Featured_Edition\model\motionplan\MotionContinuousBidirectionalPlanning.py", line 22, in build_moving_frame
+    moving_frame = proc.continuous_scan.update(proc.plc_data, ready=proc.continuous_lidar_ready and proc.lidar_status == 0, allow_scan=allow_scan)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Code\Full_Featured_Edition\tests\test_motion_continuous_bidirectional_planning.py", line 31, in update
+    frame.AxisList[index] = AxisData(Pos=777, Speed=25, Status=0)
+    ~~~~~~~~~~~~~~^^^^^^^
+IndexError: list assignment index out of range
+
+======================================================================
+ERROR: test_clean_mode_prevents_a_new_lidar_scan (test_motion_continuous_bidirectional_planning.MotionContinuousBidirectionalPlanningTest.test_clean_mode_prevents_a_new_lidar_scan)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Code\Full_Featured_Edition\tests\test_motion_continuous_bidirectional_planning.py", line 150, in test_clean_mode_prevents_a_new_lidar_scan
+    frame = MotionContinuousBidirectionalPlanning().build_moving_frame(proc)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Code\Full_Featured_Edition\model\motionplan\MotionContinuousBidirectionalPlanning.py", line 22, in build_moving_frame
+    moving_frame = proc.continuous_scan.update(proc.plc_data, ready=proc.continuous_lidar_ready and proc.lidar_status == 0, allow_scan=allow_scan)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Code\Full_Featured_Edition\tests\test_motion_continuous_bidirectional_planning.py", line 31, in update
+    frame.AxisList[index] = AxisData(Pos=777, Speed=25, Status=0)
+    ~~~~~~~~~~~~~~^^^^^^^
+IndexError: list assignment index out of range
+
+======================================================================
+ERROR: test_clean_mode_uses_each_devices_own_x_limit (test_motion_continuous_bidirectional_planning.MotionContinuousBidirectionalPlanningTest.test_clean_mode_uses_each_devices_own_x_limit)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Code\Full_Featured_Edition\tests\test_motion_continuous_bidirectional_planning.py", line 141, in test_clean_mode_uses_each_devices_own_x_limit
+    frame = MotionContinuousBidirectionalPlanning().build_moving_frame(proc)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Code\Full_Featured_Edition\model\motionplan\MotionContinuousBidirectionalPlanning.py", line 22, in build_moving_frame
+    moving_frame = proc.continuous_scan.update(proc.plc_data, ready=proc.continuous_lidar_ready and proc.lidar_status == 0, allow_scan=allow_scan)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Code\Full_Featured_Edition\tests\test_motion_continuous_bidirectional_planning.py", line 31, in update
+    frame.AxisList[index] = AxisData(Pos=777, Speed=25, Status=0)
+    ~~~~~~~~~~~~~~^^^^^^^
+IndexError: list assignment index out of range
+
+======================================================================
+ERROR: test_enabled_devices_keep_their_operate_bits_after_reaching_safe_position (test_motion_continuous_bidirectional_planning.MotionContinuousBidirectionalPlanningTest.test_enabled_devices_keep_their_operate_bits_after_reaching_safe_position)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Code\Full_Featured_Edition\tests\test_motion_continuous_bidirectional_planning.py", line 122, in test_enabled_devices_keep_their_operate_bits_after_reaching_safe_position
+    frame = MotionContinuousBidirectionalPlanning().build_moving_frame(proc)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Code\Full_Featured_Edition\model\motionplan\MotionContinuousBidirectionalPlanning.py", line 22, in build_moving_frame
+    moving_frame = proc.continuous_scan.update(proc.plc_data, ready=proc.continuous_lidar_ready and proc.lidar_status == 0, allow_scan=allow_scan)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Code\Full_Featured_Edition\tests\test_motion_continuous_bidirectional_planning.py", line 31, in update
+    frame.AxisList[index] = AxisData(Pos=777, Speed=25, Status=0)
+    ~~~~~~~~~~~~~~^^^^^^^
+IndexError: list assignment index out of range
+
+======================================================================
+ERROR: test_servo_alarm_uses_status_bit_zero_and_disables_all_device_motion (test_motion_continuous_bidirectional_planning.MotionContinuousBidirectionalPlanningTest.test_servo_alarm_uses_status_bit_zero_and_disables_all_device_motion)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Code\Full_Featured_Edition\tests\test_motion_continuous_bidirectional_planning.py", line 113, in test_servo_alarm_uses_status_bit_zero_and_disables_all_device_motion
+    frame = MotionContinuousBidirectionalPlanning().build_moving_frame(proc)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Code\Full_Featured_Edition\model\motionplan\MotionContinuousBidirectionalPlanning.py", line 22, in build_moving_frame
+    moving_frame = proc.continuous_scan.update(proc.plc_data, ready=proc.continuous_lidar_ready and proc.lidar_status == 0, allow_scan=allow_scan)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Code\Full_Featured_Edition\tests\test_motion_continuous_bidirectional_planning.py", line 31, in update
+    frame.AxisList[index] = AxisData(Pos=777, Speed=25, Status=0)
+    ~~~~~~~~~~~~~~^^^^^^^
+IndexError: list assignment index out of range
+
+======================================================================
+ERROR: test_repository_configurations_all_parse_after_confirmed_sn3_conflict_resolution (test_qt_deployment.DeploymentTests.test_repository_configurations_all_parse_after_confirmed_sn3_conflict_resolution)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Code\Full_Featured_Edition\tests\test_qt_deployment.py", line 89, in test_repository_configurations_all_parse_after_confirmed_sn3_conflict_resolution
+    self.assertFalse(config["3"]["top_chain_hold_enabled"])
+                     ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'top_chain_hold_enabled'
+
+----------------------------------------------------------------------
+Ran 190 tests in 10.789s
+
+FAILED (errors=7)
+TXT 回放：ordinary.txt（1/1）
+已通知PLC进程更新SN[1]的配置：{'machine': {'sn': 1, 'type': 'xn_side', 'x_pos_speed': 320, 'out_front_x_offset': 100, 'out_after_x_offset': 100, 'in_front_x_offset': 100, 'in_after_x_offset': 100, 'x_recip_speed': 100, 'x_status_offset': 100, 'out_up_y_offset': 100, 'out_down_y_offset': 100, 'in_up_y_offset': 100, 'in_down_y_offset': 100, 'y_pos_speed': 100, 'y_recip_speed': 100, 'out_z_front_offset': 100, 'out_z_after_offset': 100, 'in_z_front_offset': 100, 'in_z_after_offset': 100, 'z_back_speed': 100, 'z_zeroing_speed': 100, 'outside_total_cycles': 100, 'inside_total_cycles': 100, 'recip_reduce_distance': 100, 'search_front_z_offset': 100, 'search_after_z_offset': 100, 'flat': {'out_front_x_offset': 100, 'out_after_x_offset': 100, 'in_front_x_offset': 100, 'in_after_x_offset': 100, 'x_pos_speed': 240, 'x_recip_speed': 100, 'x_status_offset': 100, 'out_up_y_offset': 100, 'out_down_y_offset': 100, 'in_up_y_offset': 100, 'in_down_y_offset': 100, 'y_pos_speed': 100, 'y_recip_speed': 100, 'out_z_front_offset': 100, 'out_z_after_offset': 100, 'in_z_front_offset': 100, 'in_z_after_offset': 100, 'z_back_speed': 100, 'z_zeroing_speed': 100, 'outside_total_cycles': 100, 'inside_total_cycles': 100, 'recip_reduce_distance': 100, 'z_spray_position': 500, 'search_front_z_offset': 100, 'search_after_z_offset': 100}}}
+
+Simulation metadata submit times (s): [0.00047989998711273074, 2.8499984182417393e-05, 4.770001396536827e-05]
+TXT 工件处理：2.txt
+TXT 工件处理：10.txt
+TXT 回放：10.txt（1/1）
+TXT 回放：2.txt（1/2）
+TXT 回放：10.txt（2/2）
+TXT 回放：2.txt（1/2）
+TXT 回放：10.txt（2/2）
+TXT 回放：10.txt（1/1）

@@ -3,7 +3,7 @@ from __future__ import annotations
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 
-from control.UiState import UiState
+from model.telemetry.UiState import UiState
 from view.qt.pages import DeviceConfigurationPage, RealtimeControlPage, DeviceControlPage
 from view.qt.theme import CYAN, MUTED, build_industrial_stylesheet, ui_px
 from view.qt.auth import authorize

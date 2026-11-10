@@ -13,7 +13,7 @@ class ObservabilityTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_many_alarms_do_not_force_controls_outside_minimum_window_height(self):
-        from control.UiState import UiState
+        from model.telemetry.UiState import UiState
         from view.qt.main_window import IndustrialMainWindow
         window = IndustrialMainWindow(SimpleNamespace())
         alarms = tuple(f"PLC alarm {index}: " + "details " * 8 for index in range(100))
@@ -40,8 +40,8 @@ class ObservabilityTests(unittest.TestCase):
         self.assertTrue(window.alarm_banner.isHidden())
 
     def test_runtime_and_bridge_errors_are_visible_and_clear_on_recovery(self):
-        from control.QtUiBridge import QtUiBridge
-        from control.UiState import UiState
+        from view.qt.QtUiBridge import QtUiBridge
+        from model.telemetry.UiState import UiState
         from view.qt.main_window import IndustrialMainWindow
         bridge = QtUiBridge(SimpleNamespace())
         window = IndustrialMainWindow(SimpleNamespace(), bridge)
@@ -56,7 +56,7 @@ class ObservabilityTests(unittest.TestCase):
 
     def test_log_polling_preserves_selection_and_tracks_bounded_snapshot(self):
         from PyQt6.QtGui import QTextCursor
-        from control.UiState import LogEvent
+        from model.telemetry.UiState import LogEvent
         from view.qt.widgets import RuntimeLogView
         page = RuntimeLogView()
         entries = tuple(LogEvent("INFO", f"event {i}") for i in range(3))
@@ -80,7 +80,7 @@ class ObservabilityTests(unittest.TestCase):
         self.assertIn("save failed", text)
 
     def test_subprocess_stderr_reaches_ui_as_error_event(self):
-        from control.RuntimeStateCollector import RuntimeStateCollector
+        from model.telemetry.RuntimeStateCollector import RuntimeStateCollector
         records = queue.Queue()
         records.put(("stderr", "laser disconnected"))
         collector = RuntimeStateCollector(records, None)
@@ -90,7 +90,7 @@ class ObservabilityTests(unittest.TestCase):
         self.assertEqual("laser disconnected", events[0].message)
 
     def test_rolling_multiline_unicode_logs_match_the_latest_snapshot(self):
-        from control.UiState import LogEvent
+        from model.telemetry.UiState import LogEvent
         from view.qt.widgets import RuntimeLogView
         page = RuntimeLogView()
         first = LogEvent("INFO", "开始 🟢\n采集就绪")
@@ -101,7 +101,7 @@ class ObservabilityTests(unittest.TestCase):
         self.assertEqual("[ERROR] 保存故障\n[INFO] 停止完成", page.toPlainText())
 
     def test_realtime_page_only_shows_recent_events(self):
-        from control.UiState import LogEvent, UiState
+        from model.telemetry.UiState import LogEvent, UiState
         from view.qt.pages import RealtimeControlPage
         page = RealtimeControlPage(SimpleNamespace())
         logs = tuple(LogEvent("INFO", f"event {i}", "stdout") for i in range(8))
@@ -111,7 +111,7 @@ class ObservabilityTests(unittest.TestCase):
         self.assertIn("event 7", text)
 
     def test_recent_prints_are_not_displaced_by_logger_or_system_events(self):
-        from control.UiState import LogEvent, UiState
+        from model.telemetry.UiState import LogEvent, UiState
         from view.qt.pages import RealtimeControlPage
         page = RealtimeControlPage(SimpleNamespace())
         printed = tuple(LogEvent("INFO", f"print {i}", "stdout") for i in range(8))
@@ -127,8 +127,8 @@ class ObservabilityTests(unittest.TestCase):
         self.assertNotIn("stderr message", text)
 
     def test_print_fragments_form_one_line_instead_of_several_recent_events(self):
-        from control.QtPipelineRuntime import SubprocessRedirect
-        from control.RuntimeStateCollector import RuntimeStateCollector
+        from control.PipelineRuntime import SubprocessRedirect
+        from model.telemetry.RuntimeStateCollector import RuntimeStateCollector
         output = queue.Queue()
         stream = SubprocessRedirect(output)
         print("point cloud", 123, file=stream)

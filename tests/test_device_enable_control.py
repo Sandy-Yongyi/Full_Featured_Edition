@@ -35,7 +35,7 @@ class DeviceEnableTests(unittest.TestCase):
 
     def test_controller_rejects_offline_commands(self):
         from control.ControlCenter import ControlCenter
-        from control.UiState import DeviceState
+        from model.telemetry.UiState import DeviceState
         sent = []
         center = ControlCenter(SimpleNamespace(control_type=2), 'complete_workpiece', send_control=sent.append)
         with self.assertRaises(RuntimeError):
@@ -48,7 +48,7 @@ class DeviceEnableTests(unittest.TestCase):
 
     def test_speed_uses_live_chain_feedback_and_page_interlock(self):
         from PyQt6.QtWidgets import QApplication
-        from control.UiState import UiState, DeviceState
+        from model.telemetry.UiState import UiState, DeviceState
         from view.qt.pages import RealtimeControlPage, DeviceControlPage
         qt_app = QApplication.instance() or QApplication([])
         self.addCleanup(lambda: qt_app.processEvents())

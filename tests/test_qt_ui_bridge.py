@@ -13,7 +13,7 @@ class FakeController:
         self.polls += 1
 
     def build_ui_state(self):
-        from control.UiState import UiState
+        from model.telemetry.UiState import UiState
 
         self.calls += 1
         return UiState.empty("complete_workpiece")
@@ -21,7 +21,7 @@ class FakeController:
 
 class QtUiBridgeTests(unittest.TestCase):
     def test_default_refresh_interval_is_one_second(self):
-        from control.QtUiBridge import QtUiBridge
+        from view.qt.QtUiBridge import QtUiBridge
         bridge = QtUiBridge(FakeController())
         bridge.start()
         self.assertEqual(1000, bridge._timer.interval())
@@ -34,7 +34,7 @@ class QtUiBridgeTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_poll_once_emits_controller_snapshot(self):
-        from control.QtUiBridge import QtUiBridge
+        from view.qt.QtUiBridge import QtUiBridge
 
         controller = FakeController()
         bridge = QtUiBridge(controller)

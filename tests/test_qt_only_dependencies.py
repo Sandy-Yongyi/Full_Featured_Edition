@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class QtOnlyDependencyTests(unittest.TestCase):
     def test_application_sources_have_no_retired_gui_imports(self):
-        files = [ROOT / name for name in ("main.py", "qt_main.py", "qt_preview.py", "setup.py")]
+        files = [ROOT / "main.py"]
         for package in ("control", "model", "view"):
             files.extend((ROOT / package).rglob("*.py"))
         offenders = []
@@ -33,7 +33,7 @@ class BlockLegacy(importlib.abc.MetaPathFinder):
         if fullname.split('.')[0] in {'wx', 'wxgl'}:
             raise ImportError('Retired framework is unavailable')
 sys.meta_path.insert(0, BlockLegacy())
-from qt_main import build_controller
+from model.runtime.qt_main import build_controller
 from PyQt6.QtWidgets import QApplication
 from view.qt.main_window import IndustrialMainWindow
 app = QApplication([])

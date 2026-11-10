@@ -1,861 +1,236 @@
-# LiDAR 采数系统 — 参数配置使用文档
+# 激光仿形自动喷涂系统
 
-### 2026-10 三种模式独立点云保存
+基于 PyQt6 的控制中心，负责激光采集、点云处理、运动规划、PLC 通讯与点云保存。根目录唯一 Python 启动文件为 `main.py`。
 
-保存服务每次启动均通过原有 `TomlLoader.load()` 重新读取实际运行目录的 `ReadDataConfig.toml`，包括 `point_cloud_save_block_mb`、`point_cloud_save_block_count` 和其他保存参数，不使用窗口创建时缓存的旧保存配置。`TomlLoader.py` 保持项目原版；修改参数后停止并重新启动采集服务生效。
+## 快速开始
 
-`ModeConfig.toml` 选择 `frame_by_frame` / `complete_workpiece` / `continuous_bidirectional` 的方式保持原样。自动采集时主界面同级启动 `PointCloudSaveProcess`，三种模式均通过共享内存传点云块，独立任务队列传块清单，归一化/保存排序与磁盘写入在保存进程执行。
+在项目根目录执行，使用安装了项目依赖的 Python 3.11：
 
-| 模式 | 保存坐标和顺序 | 下游兼容 |
-|---|---|---|
-| `frame_by_frame` | 原相对 Z 回绕修正并归零、原各方向及 combined 顺序 | 原逐帧 `raw_data_queue`，包含 FIFO 和 PLC 连接代数 |
-| `complete_workpiece` | 原相对 Z 归一化 | 原同原点 `all_data` / 独立原点方向数组和 stop_pulse；分区、分枪仍由原处理链执行 |
-| `continuous_bidirectional` | **绝对 Z 不归零**，按 Z/Y/X 排序，含反向扫描 | 原整趟数据与 stop_pulse 交付给 PLC；异常扫描仍作废后重采 |
-
-按工件/连续模式采集期间用帧列表积累计算输入，结束时仍要为原下游算法组装、归一化或排序整件数组；这属于计算交付，既不等待保存确认，也不写文件。独立保存不表示这些模式全部计算开销消失。
-
-新增 `ReadDataConfig.toml` 参数：
-
-| 参数 | 默认值 | 用途 |
-|---|---|---|
-| `point_cloud_save_block_mb` / `point_cloud_save_block_count` | 16 / 32 | 约512 MiB块池，按最大点云与积压调整；float64 XYZ每点24字节，各方向与combined分别占空间 |
-| `point_cloud_save_format` | `txt` | 保留 TXT %.1f；可选 NPY，保留处理后完整浮点精度 |
-| `point_cloud_preview_voxel_mm` | 10 | 仅预览体素降采样；0显示全部点，无固定点数上限 |
-| `point_cloud_acquisition_stop_timeout_s` | 15 | 采集封存及退出等待秒数 |
-| `point_cloud_save_shutdown_timeout_s` | 120 | 保存排空等待秒数 |
-
-各工件使用独立块，成功保存后 ACK 回收。缓冲接近满时预警，耗尽时报告故障并停止，不能静默丢点/覆盖；磁盘持续慢于采集时有限内存无法无限积压。`threadpool_size` 保留兼容，保存不再读取。
-
-文件名增加微秒、进程号与工件序号。先写 `.part`，成功关闭后改名；`.complete.json` 给出工件文件清单、点数和 incomplete 标记。正常停止的已采部分标记 incomplete；连续模式作废扫描沿用原丢弃规则。写入失败、强制终止、没有完成清单的工件不能视为完整。保留原最多1000历史文件清理策略，不表示无限保留文件。
-
-可视化在保存端生成，右原点镜像只改变预览，不改文件。`complete_workpiece + draw_type=2` 保留处理端线框预览，保存端不覆盖它；其他模式显示保存端点云预览。关闭降采样会增加显示成本。
-
-停止/关闭时保持密码与中英文界面，先结束采集与控制，再排空已提交保存任务，窗口继续响应；排空前禁用重新启动。PLC停止仍沿用既有控制终止行为，本改动不新增运动或停机协议。现场需重新验证三模式采集、联锁与性能。
-
-保存兼容专项验证：`python tests/run_saving_tests.py`；全套验证：`python -m unittest discover -s tests -v`。清枪用例已通过固定测试限位数据修正，未改动运动算法。源码与 Cython 检查不等于现场设备测试或 EXE 完整打包。
-
-## 目录
-
-1. [系统概述](#1-系统概述)
-    - [1.1 V2.0 更新概览（相对 V1.0）](#11-v20-更新概览相对-v10)
-2. [快速开始](#2-快速开始)
-3. [采集策略说明](#3-采集策略说明)
-4. [配置文件详解](#4-配置文件详解)
-   - [SystemConfig.toml](#41-systemconfigtoml--系统总配置)
-   - [LidarConfig.toml](#42-lidarconfigtoml--激光雷达配置)
-   - [PlcConfig.toml](#43-plcconfigtoml--plc通信配置)
-   - [ReadDataConfig.toml](#44-readdataconfigtoml--采数核心参数)
-   - [ProcessConfig.toml](#45-processconfigtoml--数据处理参数)
-   - [MachineConfig.toml](#46-machineconfigtoml--机器人轴配置)
-   - [SprayConfig.toml](#47-sprayconfigtoml--喷涂参数)
-5. [PLC 通信帧格式](#5-plc-通信帧格式)
-   - [SendMovingFrameData（发送帧）](#51-sendmovingframedata发送帧)
-   - [ReceiveMovingFrameData（接收帧）](#52-receivemovingframedata接收帧)
-   - [帧封装协议](#53-帧封装协议)
-6. [修改策略与参数指南](#6-修改策略与参数指南)
-7. [进程架构说明](#7-进程架构说明)
-8. [常见问题](#8-常见问题)
-
----
-
-## 1. 系统概述
-
-本系统是标准的三种类型激光采数系统，支持以下三种采集策略：
-
-| 策略名称                      | 中文名称       | 典型应用场景                         |
-|-------------------------------|----------------|--------------------------------------|
-| `frame_by_frame`              | 逐帧采集发送   | 星沙、新疆大道等传送带单向采数项目   |
-| `continuous_bidirectional`    | 往复连续采集   | 沙特等往返式扫描项目                 |
-| `complete_workpiece`          | 完整工件采集   | 上海展会、河村、欧瑞等整工件项目     |
-
-系统由三个主要进程组成：
-
-```
-┌─────────────────────┐   pulse_queue   ┌──────────────────────┐
-│ PlcCommunicationProc│ ──────────────> │ LidarAcquisitionProc │
-│  (PLC通信进程)      │                 │  (激光采集进程)      │
-└─────────────────────┘                 └──────────┬───────────┘
-                                                   │ raw_data_queue
-                                                   ▼
-                                        ┌──────────────────────┐
-                                        │ DataProcessingProcess│
-                                        │  (数据处理进程，     │
-                                        │  仅complete_workpiece│
-                                        │  策略使用)           │
-                                        └──────────────────────┘
+```powershell
+python -m pip install -r requirements.txt
+python main.py
 ```
 
-### 1.1 V2.0 更新概览（相对 V1.0）
+常用命令：
 
-本次 V2.0 主要围绕 **采数安全联锁**、**PLC 协议扩展**、**多方向激光支持** 与 **运行性能优化** 四个方向升级。
+| 用途 | 命令 |
+| --- | --- |
+| 正常启动 | `python main.py` |
+| 空场界面预览，不启动硬件进程 | `python -m model.runtime.qt_preview` |
+| 只读部署自检，不启动界面和硬件进程 | `python main.py --check-deployment` |
+| 编译私有模块为扩展 | `python -m model.build_extensions build_ext --inplace` |
+| 全量自动测试 | `python -m unittest discover -s tests -v` |
+| 点云保存专项测试 | `python tests/run_saving_tests.py` |
+| 代码规范检查，需安装 flake8 | `python -m flake8` |
 
-| 模块 | V1.0 | V2.0 |
-|------|------|------|
-| 采数安全 | 以基本采集流程为主 | 增加激光/PLC 断连检测、自动重连、停止态激光状态轮询、异常工件作废与联锁状态下发 |
-| 首件处理 | 仅基础跳过逻辑 | 增加软件首启工件跳过、重连后首工件跳过、逐帧模式空帧放行保护 |
-| 帧发送 | FIFO 顺序发送 | 增加 FIFO 跳变检测，输出 `repeat_count` 用于补齐缺失节拍，并同步携带 `lidar_status` |
-| 激光拓扑 | 主要面向左/右侧 | 扩展支持 `left_upper`、`right_upper` 上侧激光，并新增上侧独立滤波参数与建帧规则 |
-| PLC 协议 | 简单收发字段 | 升级为固定 `206` 字节载荷，新增 `ChainCountMM`、`Status`、`Operate` 与 `AxisList[32]` |
-| 运动轴映射 | 轴索引逻辑分散 | 新增 `MachineAxisMap`，统一设备类型、安装方向、PLC 轴索引及限位读取 |
-| 性能优化 | 逐帧模式热点较多 | 仅消费 `pulse_queue` 最新值、逐帧模式减少排序开销、建帧改为向量化计算、支持 Cython 编译 |
+源码启动会先定位项目根目录，再加载 `model/tomls`。冻结应用使用可执行文件所在目录。文件位置和工作目录的处理位于 `model/runtime/app_bootstrap.py`。
 
-#### V2.0 重点新增能力
+## 开发运行方式与采集策略
 
-1. **激光安全状态联锁**
-    - 停止状态下会周期性轮询激光状态，并通过 `raw_data_queue` 下发 `lidar_status`。
-    - 采数过程中如果激光断开或返回异常状态，当前工件会被判定为无效，避免异常点云继续下游流转。
-    - `frame_by_frame` 模式下，异常时会附带 `reset_queue=True`，用于通知下游清理当前缓存队列。
+两者是不同的设置：`CONTROL_TYPE` 决定数据来源和调试方式，`strategy_name` 决定采数、处理及运动规划策略。
 
-2. **首件与异常恢复保护**
-    - 软件刚启动时，如果工件已经在扫描区中间，V2.0 会自动跳过这件不完整工件。
-    - 激光或 PLC 断线重连后，系统会跳过恢复后的首件，降低恢复瞬间混入不完整数据的概率。
-
-3. **多方向激光扩展**
-    - 在原有 `left`、`right` 基础上，新增 `left_upper`、`right_upper` 配置能力。
-    - 上侧激光在逐帧建帧时改为按 `X` 分层，使用 `x_threshold` 生成帧数据，适配顶部视角采数。
-
-4. **PLC V2 协议升级**
-    - 发送帧和接收帧都扩展为固定 `206` 字节有效载荷。
-    - 除链条脉冲外，还可直接接收毫米计数、状态位、操作位和 32 组轴数据。
-    - 发送时如果载荷不足，会自动补 `0x00` 到约定长度，便于和 PLC 固定帧协议对齐。
-
-5. **运行性能与部署能力提升**
-    - `LidarAcquisitionProcess` 在更新脉冲时只消费队列中的最新值，减少 PLC 高频数据造成的积压。
-    - `frame_by_frame` 模式下不过早做整帧排序，降低热点计算。
-    - 新增 `setup.py`，可通过 Cython 将核心模块编译为扩展模块，便于性能优化和部署封装。
-
----
-
-## 2. 快速开始
-
-### 修改采集策略
-
-主界面使用 PyQt6。运行 `main.py` 启动生产控制中心；运行 `qt_preview.py` 查看不连接设备的空场预览。
-
-只读部署自检：`python -B main.py --check-deployment`，不启动界面和设备进程。构建命令和产物验收见 [Qt 部署说明](docs/qt-deployment.md)。
-
-开发代码同时保留 TXT 联调与仅查看点云，修改 `main.py` 顶部的 `CONTROL_TYPE`、`DATA_PATH`、`DATA_NAME` 后直接运行即可；命令参数也可覆盖设置。正常交付保持 `CONTROL_TYPE=2`，不在操作员界面提供运行方式切换。详见 [开发运行方式](docs/qt-developer-modes.md)。
-
-“喷涂任务”页按策略显示反馈：策略 1 显示链条 FIFO、原始数据超时标记及各方向缓存槽位（含空帧）；策略 2 显示 xn_side 分枪计划和工艺阶段；策略 3 显示扫描阶段、故障原因及激光位/手补位/自动位的数据流转状态。工位的“有点云数据”表示软件数据占用，不能作为实际工件到位或开枪反馈；反馈缺失或过期时显示待反馈，完成百分比仍待实际设备数据接入。
-
-策略统一由 `model/tomls/ModeConfig.toml` 配置，修改后重启软件：
-
-```toml
-strategy_name = 1 # 1=逐帧，2=完整工件，3=连续往复
-```
-
-可选值：
-
-- `"frame_by_frame"` — 逐帧采集，推荐用于传送带系统
-- `"continuous_bidirectional"` — 往复采集，适用于往返扫描线
-- `"complete_workpiece"` — 完整工件，适用于流水线多工件系统
-
-### 基本使用流程
+在 `main.py` 顶部设置开发运行方式，下面的路径仅为示例：
 
 ```python
-import multiprocessing
-from control.LidarAcquisitionProcess import LidarAcquisitionProcess
-from control.PlcCommunicationProcess import PlcCommunicationProcess
-from model.utils.TomlLoader import TomlLoader
-import os
-
-toml_path = os.getcwd() + "\\model\\tomls"
-sys_config = TomlLoader.load(f"{toml_path}\\SystemConfig.toml")
-
-lidar_config = {
-    "left":  sys_config.get("left_lidar_ids", []),
-    "right": sys_config.get("right_lidar_ids", []),
-    # 如需启用上侧激光，可显式追加：
-    # "left_upper":  sys_config.get("left_upper_lidar_ids", []),
-    # "right_upper": sys_config.get("right_upper_lidar_ids", []),
-}
-
-pulse_queue     = multiprocessing.Queue()
-raw_data_queue  = multiprocessing.Queue()
-viz_queue       = multiprocessing.Queue(maxsize=2)
-
-from model.utils.PointCloudSaveService import PointCloudSaveService
-from model.utils.TomlLoader import TomlLoader
-save_service = PointCloudSaveService(
-    TomlLoader.load(toml_path + "\\ReadDataConfig.toml"), "data/points", viz_queue)
-save_service.start()  # 在父进程启动，与采集同级；不在采集 daemon 中创建子进程
-
-# 1. 启动激光采集进程
-lidar_acquisition = LidarAcquisitionProcess(
-    pulse_queue=pulse_queue,
-    raw_data_queue=raw_data_queue,
-    viz_queue=viz_queue,
-    lidar_config=lidar_config,
-    config_dir=toml_path,
-    strategy_name="frame_by_frame",   # ← 选择策略
-    save_pool_descriptor=save_service.pool.descriptor,
-    save_task_queue=save_service.task_queue,
-    save_ack_queue=save_service.ack_queue,
-    save_status_queue=save_service.status_queue,
-    stop_event=save_service.stop_event,
-)
-lidar_acquisition.daemon = True
-lidar_acquisition.start()
-
-# 2. 启动PLC通信进程（工厂方法自动匹配策略）
-plc_handler = PlcCommunicationProcess.create(
-    strategy_name=lidar_acquisition.strategy_name,
-    raw_data_queue=raw_data_queue,
-    pulse_queue=pulse_queue,
-)
-plc_handler.daemon = True
-plc_handler.start()
-
-# Windows spawn 的这些启动调用需放在 if __name__ == "__main__" 下。
-# 关闭时（实际界面会后台调用）：
-from model.utils.PointCloudSaveService import stop_pipeline
-stop_pipeline([lidar_acquisition, plc_handler, save_service.worker],
-              lidar_acquisition, save_service)
+CONTROL_TYPE = 2  # 1=TXT显示并联调PLC，2=实时采数与运动，3=只导入TXT画图
+DATA_PATH = r"D:\draw_points\sample"
+DATA_NAME = None
 ```
 
----
+| CONTROL_TYPE | 行为 |
+| --- | --- |
+| 1 | 从 TXT 回放数据，显示点云并联调 PLC；目前支持策略 1、2 |
+| 2 | 实时采集和运动；正常交付使用此方式 |
+| 3 | 只导入 TXT 查看点云，设备配置只读，不启用 PLC、激光和保存进程 |
 
-## 3. 采集策略说明
+三种方式均等待人工点击界面启动按钮；方式 3 需点击“导入 TXT 点云”，启动软件不会自动导入。
 
-### 3.1 `frame_by_frame` — 逐帧采集发送
+方式 1、3 使用 `DATA_PATH` 和 `DATA_NAME`。方式 1 的目录回放中，`DATA_NAME=None` 时按自然文件名顺序处理数据集；指定名称时只处理对应数据集。同原点与独立原点的组织规则沿用 `ReadDataConfig.toml`，独立原点数据使用 `left_`、`right_` 等方向前缀。
 
-- **适用场景**：传送带单向运动，需要实时逐帧向 PLC 发送点云数据
-- **工作原理**：
-  1. 监测链条正向运动（`moving_forward`）
-  2. 每帧采集后通过 FIFO 编号累积并发送至 `raw_data_queue`
-  3. 发送格式：`{"fifo": <int>, "left": AxisFrameData, "right": AxisFrameData}`
-- **关键参数**：`max_fifo`、`fifo_unit_mm`、`y_threshold`、`combined_y_min`/`combined_y_max`
-
-### 3.2 `continuous_bidirectional` — 往复连续采集
-
-- **适用场景**：0→3000 或 3000→0 往返扫描，端点自动停止采数
-- **工作原理**：
-  1. 检测方向变化，整段采集
-  2. 到达端点（`pulse >= max_swing_pulse` 或 `pulse <= 0`）强制结束
-  3. 采集完整后一次性发送所有数据至 `raw_data_queue`
-- **关键参数**：`swing_threshold`、`max_swing_pulse`、`max_scan_length`
-
-### 3.3 `complete_workpiece` — 完整工件采集
-
-- **适用场景**：流水线多工件，每工件完整采集后进行分区及分枪处理
-- **工作原理**：
-  1. 检测正向运动，按有效点云数量判断工件起止
-  2. 通过链接停止逻辑（`linked_stop_distance_mm`）协调多方向
-  3. 完整工件数据发送至 `raw_data_queue`，再由 `DataProcessingProcess` 处理
-- **关键参数**：`start_skip_mm`、`linked_stop_distance_mm`、`max_scan_length`
-
----
-
-## 4. 配置文件详解
-
-所有配置文件位于 `model/tomls/` 目录。
-
----
-
-### 4.1 `SystemConfig.toml` — 系统总配置
-
-**功能**：定义激光雷达 ID 分组，控制哪些激光属于左侧/右侧。
+采集策略由 `model/tomls/ModeConfig.toml` 的整数配置选择，修改后重启：
 
 ```toml
-left_lidar_ids  = ["1", "2"]   # 左侧激光雷达 ID 列表（对应 LidarConfig.toml 中的节号）
-right_lidar_ids = ["3", "4"]   # 右侧激光雷达 ID 列表
-left_upper_lidar_ids  = ["5"]   # 左上侧激光雷达 ID 列表（可选）
-right_upper_lidar_ids = ["6"]   # 右上侧激光雷达 ID 列表（可选）
+strategy_name = 1
 ```
 
-| 参数              | 类型         | 说明                                     |
-|-------------------|--------------|------------------------------------------|
-| `left_lidar_ids`  | `list[str]`  | 左侧激光雷达 ID 列表，可配置多个         |
-| `right_lidar_ids` | `list[str]`  | 右侧激光雷达 ID 列表，可配置多个         |
-| `left_upper_lidar_ids`  | `list[str]`  | 左上侧激光雷达 ID 列表，V2.0 新增       |
-| `right_upper_lidar_ids` | `list[str]`  | 右上侧激光雷达 ID 列表，V2.0 新增       |
+| strategy_name | 内部名称 | 工作方式 | 设备配置文件 |
+| --- | --- | --- | --- |
+| 1 | `frame_by_frame` | 按 FIFO 逐帧采集、建帧并交给 PLC | `MachineConfig1.toml` |
+| 2 | `complete_workpiece` | 采完整件点云，提取框体与挂具等特征，再进入分枪及运动规划 | `MachineConfig2.toml` |
+| 3 | `continuous_bidirectional` | 连续往复采集，按整趟点云和工位状态处理 | `MachineConfig3.toml` |
 
-> **注意**：ID 必须与 `LidarConfig.toml` 中的节号一致，如 `"1"` 对应 `[1]` 节。
+TOML 中填写整数 `1/2/3`，内部模块之间使用策略名称字符串。更详细的开发入口和 TXT 规则见 [开发运行方式](docs/qt-developer-modes.md)。
 
----
+## 当前界面
 
-### 4.2 `LidarConfig.toml` — 激光雷达配置
+左侧保留“实时控制、设备控制、设备配置”三个页面。现有页面每秒接收一次状态更新，切页不暂停点云预览数据处理；PLC 收发和激光采集周期由工作进程管理，不随界面刷新改成一秒一次。
 
-**功能**：定义每台激光雷达的网络地址、坐标偏移、安装方向等参数。每个节对应一台激光雷达。
+- **实时控制**：点云、启动/停止、任务摘要、设备联锁和最近 print 事件。链条运动速度来自 PLC 的 `ChainSpeed`，按 `mm/s × 0.06` 转成 `m/min`。仅完整工件策略显示“外框、内框、挂具”图层选项。
+- **设备控制**：总使能位于左上，六台设备分左右两列排列。总使能关闭时设备按钮不可点击，并清空设备开关位；PLC 未连接或停止中禁止控制。开关展示软件下发状态，不代表设备已执行的回读确认。
+- **设备配置**：按当前策略读取对应 TOML，通过同名设备按钮选择参数，选中设备高亮并显示设备参数标题。参数直接编辑，启用密码时仅在保存时验证。参数区保留滚动条。
 
-```toml
-[1]
-host                   = "192.168.1.201"  # 激光雷达 IP 地址
-port                   = 2111             # 激光雷达 TCP 端口
-same_origin_offset_x   = 0               # 统一原点 X 轴偏移量（mm）
-same_origin_offset_y   = 3695            # 统一原点 Y 轴偏移量（mm）
-diff_origin_offset_x   = 0               # 各自原点 X 轴偏移量（mm）
-diff_origin_offset_y   = 3695            # 各自原点 Y 轴偏移量（mm）
-type                   = "120"           # 激光雷达型号（如 "120" 表示120°扫描角）
-install_orietation     = "left"          # 安装方向：'left' 或 'right'
-start_angle_direction  = 1              # 起始角度方向（0=下,1=上,2=右,3=左）
-start_angle            = 0              # 扫描起始角度（度）
-stop_angle             = 180            # 扫描终止角度（度）
+点云默认从负 X 方向观察，Z 水平、Y 竖直，网格位于 X–Z 平面；点云按 X 值使用冷色渐变。完整工件的外框为绿色、内框为红色、挂具为亮黄色。界面采用 125% 的字体与控件尺寸设置，三维点大小和相机缩放不因该设置改变。
+
+## 目录结构与职责
+
+```text
+main.py                              # 正式入口、开发方式设置、单实例保护
+control/                             # 开放的控制代码
+├─ ControlCenter.py                   # 启停、控制命令、运行状态
+├─ PipelineRuntime.py                 # 创建与管理进程、队列、共享内存
+├─ PlcCommunicationProcess.py         # PLC 收发、调用运动规划
+├─ DataProcessWorker.py               # TXT 回放与 PLC 联调
+└─ DataProcessingProcess.py           # 完整工件处理进程，调用私有算法
+model/
+├─ runtime/                          # 运行与启动辅助
+│  ├─ ProcessHealthMonitor.py
+│  ├─ ShutdownCoordinator.py
+│  ├─ app_bootstrap.py
+│  ├─ qt_main.py
+│  ├─ qt_preview.py
+│  └─ deployment_check.py
+├─ telemetry/                        # 公共状态与队列收集，不依赖 Qt
+│  ├─ UiState.py
+│  └─ RuntimeStateCollector.py
+├─ pointcloud/                       # TXT 导入、共享内存与保存
+│  ├─ PointCloudFileProcess.py
+│  ├─ PointCloudSaveProcess.py
+│  ├─ PointCloudSaveBuffer.py
+│  └─ PointCloudSaveService.py
+├─ lidar/                            # 采数进程、策略与激光驱动
+├─ dataprocess/                      # 点云算法、特征提取、分区与分枪
+├─ plc/                              # 报文定义、序列化及底层通信
+├─ motionplan/                       # 开放的运动规划与轴映射
+├─ formats/                          # 算法与规划共用的数据结构
+├─ tomls/                            # 开放配置
+└─ utils/                            # 配置及公共工具
+   ├─ ConfigurationService.py
+   └─ MachineConfiguration.py
+view/qt/                             # Qt 界面、授权和 OpenGL 点云视图
+├─ QtUiBridge.py                     # 一秒一次的 Qt 状态桥接
+├─ MachineConfigSchema.py            # 参数名称及显示顺序
+├─ main_window.py
+└─ pages.py
 ```
 
-| 参数                    | 类型    | 说明                                                                          |
-|-------------------------|---------|-------------------------------------------------------------------------------|
-| `host`                  | `str`   | 激光雷达 IP 地址                                                              |
-| `port`                  | `int`   | TCP 端口，通常为 2111                                                         |
-| `same_origin_offset_x`  | `int`   | 统一原点模式下的 X 轴偏移（mm），用于多激光拼接                               |
-| `same_origin_offset_y`  | `int`   | 统一原点模式下的 Y 轴偏移（mm）                                               |
-| `diff_origin_offset_x`  | `int`   | 各自原点模式下的 X 轴偏移（mm）                                               |
-| `diff_origin_offset_y`  | `int`   | 各自原点模式下的 Y 轴偏移（mm）                                               |
-| `type`                  | `str`   | 激光雷达型号                                                                  |
-| `install_orietation`    | `str`   | 安装方向：`"left"`、`"right"`、`"left_upper"` 或 `"right_upper"`          |
-| `start_angle_direction` | `int`   | 激光 0° 角朝向：0=下方, 1=上方, 2=右边, 3=左边（面对激光正面，逆时针 0-180）|
-| `start_angle`           | `int`   | 有效扫描起始角度（度）                                                        |
-| `stop_angle`            | `int`   | 有效扫描终止角度（度）                                                        |
+旧 `model/plot` 已删除，当前绘图使用 `view/qt/point_cloud_view.py`。旧根目录的 `qt_main.py`、`qt_preview.py`、`app_bootstrap.py`、`deployment_check.py` 已迁入 `model/runtime`，不再保留同名根目录兼容文件。
 
-> **V2.0 说明**：当前工程已预留 6 台激光配置，其中 `[5]`、`[6]` 分别用于 `left_upper`、`right_upper` 上侧激光。
+调用关系为：Qt 界面 → `ControlCenter` → `PipelineRuntime` → 工作进程；工作进程通过状态队列和公共状态结构向界面反馈。参数显示规则放在 `view/qt`，参数读写和范围校验放在 `model/utils`。详见 [模块目录说明](docs/module-layout.md)。
 
----
+## 进程与通信
 
-### 4.3 `PlcConfig.toml` — PLC 通信配置
+下表列出常用自动运行路径。数量不含 Qt 主进程，`CONTROL_TYPE=2` 按 `spray_mode=0` 的自动采集路径统计。
 
-**功能**：定义与 PLC 的通信参数，支持 TCP 和 UDP 两种方式。
+| 运行方式 | 工作进程 | 数量 |
+| --- | --- | --- |
+| 实时采集，策略 1、3 | 激光采集 + PLC + 点云保存 | 3 |
+| 实时采集，策略 2 | 激光采集 + 点云处理 + PLC + 点云保存 | 4 |
+| TXT 联调，策略 1 | TXT 回放 + PLC | 2 |
+| TXT 联调，策略 2 | TXT 回放 + 点云处理 + PLC | 3 |
+| 只看 TXT 点云 | TXT 导入 | 1 |
 
-```toml
-[1]
-tcp_ip          = "192.168.1.100"  # PLC TCP 连接 IP 地址
-tcp_port        = 2005             # PLC TCP 连接端口
-udp_ip          = "192.168.1.50"   # PLC UDP 连接 IP 地址
-udp_port        = 6002             # PLC UDP 连接端口
-connection_type = "tcp"            # 连接类型：'tcp' 或 'udp'
+`PipelineRuntime` 负责创建资源和工作进程。主入口使用 Windows `spawn` 并调用 `freeze_support()`；不要在模块导入时直接启动子进程。
+
+| 通道 | 用途 |
+| --- | --- |
+| `control_queue` | 界面控制、设备开关和配置更新发送给 PLC 进程 |
+| `pulse_queue` | PLC 脉冲、FIFO 和链条运动状态发给采数/回放进程 |
+| `raw_data_queue` | 逐帧结果或完整工件点云，消费者由策略决定 |
+| `machine_data_queue` | 策略 2 的处理结果发给 PLC 进程 |
+| `viz_queue` | 点云和框体预览；容量为 2，界面端合并读取最新预览 |
+| `ui_status_queue` | 设备通讯状态、链速、软件使能位与任务摘要 |
+| `log_queue` | 子进程 print/stderr 收集；最近事件仅显示 print |
+| 共享点云池 + 保存任务/ACK 队列 | 大点云保存、块描述传递及完成回收 |
+
+**当前完整工件采数 → 数据处理仍使用普通队列传数组。** 保存链路的共享内存尚未复用于处理链路；不要把“保存使用共享内存”理解为所有点云传输都已零拷贝。
+
+## 点云保存
+
+保存进程独立于采数与 PLC，父进程创建共享内存池，采数进程写点云块，通过任务队列提交块描述。保存成功后返回 ACK，再回收对应块。
+
+| ReadDataConfig.toml 参数 | 默认值 | 含义 |
+| --- | --- | --- |
+| `point_cloud_save_block_mb` | 16 | 每块内存大小，MiB |
+| `point_cloud_save_block_count` | 32 | 块数量，总池约 512 MiB |
+| `point_cloud_save_format` | `txt` | 支持 `txt` / `npy` |
+| `point_cloud_preview_voxel_mm` | 10 | 预览体素尺寸，0 不降采样 |
+| `point_cloud_acquisition_stop_timeout_s` | 15 | 整数秒，等待采数封存退出 |
+| `point_cloud_save_shutdown_timeout_s` | 120 | 整数秒，等待保存排空 |
+
+池内使用 float64 XYZ，每点 24 字节；方向点云与 combined 分别占空间。缓冲耗尽会报错，不覆盖仍待保存的数据。
+
+策略 1、2 的保存点云执行相对 Z 回绕修正并归零；策略 3 保留绝对 Z，按 Z/Y/X 排序。先写 `.part`，成功后改名，并生成 `.complete.json` 工件清单。清单中的 `incomplete` 表示未完整采集。关闭时先结束采数，再排空保存任务并清理共享资源。
+
+预览降采样不降低保存点数。完整工件 `draw_type=2` 时由处理进程提供框体预览，保存进程不覆盖它。右原点转换用于预览对齐，源 TXT 不被修改。
+
+## 配置文件
+
+配置均位于 `model/tomls`，修改采集策略、设备布局等配置后重启软件。
+
+| 文件 | 作用 |
+| --- | --- |
+| `ModeConfig.toml` | `strategy_name`、运行工艺模式及密码配置 |
+| `SystemConfig.toml` | 左/右及上侧激光分组 |
+| `LidarConfig.toml` | 激光地址、安装方向、扫描角及坐标偏移 |
+| `PlcConfig.toml` | PLC 网络与连接参数 |
+| `ReadDataConfig.toml` | 点云过滤、原点、脉冲换算、FIFO、超时和保存参数 |
+| `ProcessConfig.toml` | 特征提取、挂具识别及分区参数 |
+| `MachineConfig1.toml` | 策略 1 的设备参数 |
+| `MachineConfig2.toml` | 策略 2 的设备参数及适用设备的平板参数 |
+| `MachineConfig3.toml` | 策略 3 的设备参数 |
+| `SprayConfig.toml` | 运动容差和喷涂参数范围 |
+
+`translate_data_origin=1` 使用同原点，`2` 使用独立原点。`pulse_to_mm` 表示每毫米脉冲数。链条实际速度来自报文 `ChainSpeed`；配置 `lidar_scan_speed` 是扫描/回零速度配置，两者不能混用。
+
+策略 1 的 SN 0～2 对应左侧内外顶、内外底、二维；SN 3～5 对应右侧三台设备。显示哪些参数由 `view/qt/MachineConfigSchema.py` 决定，保存沿用配置合并和参数范围校验，不删除未显示的配置项。
+
+## PLC 报文字段
+
+报文源码为 [MovingFrameData.py](model/plc/MovingFrameData.py)，序列化框架为 [PlcFrame.py](model/plc/PlcFrame.py)。当前使用大端序，20 组轴，每组 `Pos/Speed/Status` 均为 Int16。
+
+发送字段顺序：
+
+| 字段 | 类型 | 字节偏移 | 用途 |
+| --- | --- | --- | --- |
+| `Operate` | Int32 | 0 | bit0 总使能，bit1～6 左侧内外顶/内外底/二维、右侧内外顶/内外底/二维 |
+| `Gun_cont1` | Int32 | 4 | 保留枪控字 |
+| `Gun_cont2` | Int32 | 8 | 保留枪控字 |
+| `HeartBeat` | Int16 | 12 | 心跳 |
+| `Control` | Int16 | 14 | 远程控制字，bit1 链条运动；规划中还使用 bit15 表示缓存有数据 |
+| `AxisList` | 20 × AxisData | 16 | 轴命令 |
+
+接收字段顺序为 `ChainPulse(Int32)`、`ChainSpeed(Int32)`、`HeartBeat(Int16)`、`Status(Int16)`、`Operate(Int16)`、`AxisList[20]`。接收 `Operate` 与发送 `Operate` 是各自报文字段，不能只按名称推断用途。
+
+当前发送字段实际序列化为 136 字节、接收为 134 字节，但两类的 `FRAME_SIZE` 常量目前均写为 134。发送端超长时会记录告警并发送实际载荷；此处需要与 PLC 协议核对后统一，README 不将其描述为已一致的固定长度。帧头、帧尾分别为四字节 `02` 和四字节 `03`。修改字段后同步核对字段类型、顺序、序列化长度及 PLC 端定义。
+
+## 私有模块构建与团队交付
+
+原根目录 `setup.py` 没有丢失：其构建职责已迁入 [model/build_extensions.py](model/build_extensions.py)，以满足根目录只保留 `main.py` 的目录约定。
+
+在项目根目录执行：
+
+```powershell
+python -m model.build_extensions build_ext --inplace
 ```
 
-| 参数              | 类型   | 说明                                    |
-|-------------------|--------|-----------------------------------------|
-| `tcp_ip`          | `str`  | PLC TCP 连接目标 IP 地址                |
-| `tcp_port`        | `int`  | PLC TCP 连接目标端口号                  |
-| `udp_ip`          | `str`  | PLC UDP 绑定本机 IP 地址                |
-| `udp_port`        | `int`  | PLC UDP 绑定本机端口号                  |
-| `connection_type` | `str`  | 通信方式：`"tcp"` 或 `"udp"`            |
+构建脚本调用 setuptools/Cython，自动收集以下目录内除 `__init__.py` 外的 Python 模块：
 
----
-
-### 4.4 `ReadDataConfig.toml` — 采数核心参数
-
-**功能**：系统最核心的配置文件，控制点云过滤、运动判断、FIFO 管理等所有采数行为。
-
-#### 1. 点云过滤参数
-
-```toml
-combined_x_min = 900    # 整体直通滤波 X 轴最小值（mm）
-combined_x_max = 4000   # 整体直通滤波 X 轴最大值（mm）
-combined_y_min = 1300   # 整体直通滤波 Y 轴最小值（mm）
-combined_y_max = 5600   # 整体直通滤波 Y 轴最大值（mm）
-left_x_min     = 900    # 左侧直通滤波 X 轴最小值（mm）
-left_x_max     = 2500   # 左侧直通滤波 X 轴最大值（mm）
-left_y_min     = 1300   # 左侧直通滤波 Y 轴最小值（mm）
-left_y_max     = 5600   # 左侧直通滤波 Y 轴最大值（mm）
-right_x_min    = 900    # 右侧直通滤波 X 轴最小值（mm）
-right_x_max    = 2500   # 右侧直通滤波 X 轴最大值（mm）
-right_y_min    = 1300   # 右侧直通滤波 Y 轴最小值（mm）
-right_y_max    = 5600   # 右侧直通滤波 Y 轴最大值（mm）
-left_upper_x_min  = 0   # 左上侧直通滤波 X 轴最小值（mm）
-left_upper_x_max  = 1600
-left_upper_y_min  = 1300
-left_upper_y_max  = 5600
-right_upper_x_min = 0   # 右上侧直通滤波 X 轴最小值（mm）
-right_upper_x_max = 1600
-right_upper_y_min = 1300
-right_upper_y_max = 5600
-energy_percentage = 0.9
-radius_threshold  = 100
-radius_num        = 100
+```text
+model/lidar
+model/plc
+model/dataprocess
+model/formats
+model/pointcloud
 ```
 
-| 参数                | 类型    | 说明                                              |
-|---------------------|---------|---------------------------------------------------|
-| `combined_x_min/max`| `int`   | 统一原点模式下整体点云 X 轴有效范围（mm）         |
-| `combined_y_min/max`| `int`   | 统一原点模式下整体点云 Y 轴有效范围（mm），**也作为逐帧发送的 Y 分层范围** |
-| `left_x_min/max`    | `int`   | 左侧激光独立原点模式 X 轴有效范围（mm）           |
-| `left_y_min/max`    | `int`   | 左侧激光独立原点模式 Y 轴有效范围（mm）           |
-| `right_x_min/max`   | `int`   | 右侧激光独立原点模式 X 轴有效范围（mm）           |
-| `right_y_min/max`   | `int`   | 右侧激光独立原点模式 Y 轴有效范围（mm）           |
-| `left_upper_x/y_*`  | `int`   | 左上侧激光独立原点模式的有效范围，V2.0 新增       |
-| `right_upper_x/y_*` | `int`   | 右上侧激光独立原点模式的有效范围，V2.0 新增       |
-| `energy_percentage` | `float` | 点云能量百分比过滤阈值                            |
-| `radius_threshold`  | `int`   | 有效点云半径阈值（mm）                            |
-| `radius_num`        | `int`   | 半径范围内最小有效点数                            |
+`control`、`view`、`model/motionplan`、公共工具与配置不在此扩展编译清单内。编译需要与目标 Python 和 Windows 架构匹配的 C/C++ 编译工具；该命令生成扩展模块，不生成整套软件的 EXE。
 
-#### 2. 点云间隔参数
+`build_ext --inplace` 不自动删除私有 `.py` 源码，也不自动筛选交付文件。对团队发布时需另外整理扩展、包初始化文件、依赖、开放源码及 TOML 配置，避免把私有源码一起交付。移动模块或修改报文后应重新编译，避免旧扩展覆盖同名新源码。
 
-```toml
-x_threshold = 10   # 上侧激光按 X 分层建帧阈值（mm）
-y_threshold = 10   # 按 Y 间隔排序/建帧阈值（mm）
-z_threshold = 10   # 按 Z 间隔排序阈值（mm）
-```
+## 检查与已知事项
 
-| 参数          | 类型  | 说明                                                              |
-|---------------|-------|-------------------------------------------------------------------|
-| `x_threshold` | `int` | `left_upper` / `right_upper` 在逐帧模式下按 X 分层时使用的阈值    |
-| `y_threshold` | `int` | Y 轴分层间隔（mm），**逐帧模式**中每层对应一个 `AxisData` 数据点 |
-| `z_threshold` | `int` | Z 轴分段间隔（mm），用于 `continuous_bidirectional` 策略数据排序 |
+flake8 使用仓库 [.flake8](.flake8)：最大行长 180、最大复杂度 20；业务源码和测试参与检查，构建缓存、第三方依赖与生成产物排除。单行不超过 180 字符时尽量保持单行。类型检查应使用项目实际 Python 环境。
 
-#### 3. 数据传输参数
+目录迁移后的验证覆盖跨工作目录入口、Windows 子进程、TXT 导入、保存及新模块构建清单。当前仍有第三策略激光轴映射与 20 轴报文不匹配、旧部署测试依赖已不存在配置字段的问题；自动测试、部署自检都不能替代设备联调和 EXE 验收。
 
-```toml
-plc_send_max_retries = 1     # PLC 数据发送最大重试次数
-max_fifo             = 29999 # PLC FIFO 最大值，超过后重置为 0
-max_pulse            = 160000 # PLC 脉冲最大值，超过后重置为 0
-```
-
-| 参数                    | 类型  | 说明                                                        |
-|-------------------------|-------|-------------------------------------------------------------|
-| `plc_send_max_retries`  | `int` | PLC 发送失败最大重试次数                                    |
-| `max_fifo`              | `int` | FIFO 计数器最大值（含），达到后回绕为 0，需与 PLC 端一致   |
-| `max_pulse`             | `int` | 脉冲计数器最大值，用于归一化 Z 轴坐标                       |
-
-#### 4. 扫描有效性参数
-
-```toml
-left_scan_points_threshold        = 10     # 左侧有效点云数量阈值
-right_scan_points_threshold       = 10     # 右侧有效点云数量阈值
-left_upper_scan_points_threshold  = 10     # 左上侧有效点云数量阈值
-right_upper_scan_points_threshold = 10     # 右上侧有效点云数量阈值
-max_scan_length                   = 10000  # 最大扫描长度（mm），超过自动结束
-swing_threshold                   = 3      # 往复模式开始/结束扫描阈值（mm）
-max_swing_pulse                   = 3000   # 往复模式最大扫描范围（脉冲数）
-linked_stop_distance_mm           = 100    # 两方向扫描联动停止距离差值（mm）
-start_skip_mm                     = 20     # 软件启动后前 N mm 内数据跳过处理（mm）
-```
-
-| 参数                           | 类型  | 说明                                                                              |
-|--------------------------------|-------|-----------------------------------------------------------------------------------|
-| `left_scan_points_threshold`   | `int` | 左侧激光每帧最少有效点数，少于此值不认为工件在扫描范围内                          |
-| `right_scan_points_threshold`  | `int` | 右侧激光每帧最少有效点数                                                          |
-| `left_upper_scan_points_threshold`  | `int` | 左上侧激光每帧最少有效点数，V2.0 新增                                         |
-| `right_upper_scan_points_threshold` | `int` | 右上侧激光每帧最少有效点数，V2.0 新增                                         |
-| `max_scan_length`              | `int` | 单次工件最大采集长度（mm），超过后强制结束当前工件                                |
-| `swing_threshold`              | `int` | 往复模式下端点判断阈值（mm），在端点附近此范围内停止采集                          |
-| `max_swing_pulse`              | `int` | 往复模式下有效脉冲范围上限（脉冲数）                                              |
-| `linked_stop_distance_mm`      | `int` | 完整工件模式下，当一个方向停止后，另一方向在此距离内联动停止（mm）                |
-| `start_skip_mm`                | `int` | 软件启动后首次检测到运动时，前 N 毫米内的工件数据跳过处理，防止不完整工件入队     |
-
-#### 5. 运动控制参数
-
-```toml
-pulse_to_mm      = 5.3  # 当前工程链条脉冲转毫米系数（示例）
-fifo_unit_mm     = 2    # FIFO 每递增 1 对应的链条移动距离（mm）
-diff_start_pulse = 1    # 链条启动判断脉冲差值阈值
-```
-
-| 参数              | 类型    | 说明                                                                      |
-|-------------------|---------|---------------------------------------------------------------------------|
-| `pulse_to_mm`     | `float` | 脉冲数转毫米的换算系数（不同产线不同）：六楼实验室链条=12.4，信高=7.0    |
-| `fifo_unit_mm`    | `int`   | FIFO 计数器每增加 1 所对应的链条移动距离（mm），默认 2mm/FIFO             |
-| `diff_start_pulse`| `int`   | 连续 5 帧脉冲最大最小差值超过此值才判定为链条运动（防抖阈值）             |
-
-#### 6. 连接可靠性参数
-
-```toml
-lidar_connect_max_retries = 10000  # 激光雷达最大重连次数
-plc_connect_max_retries   = 10000  # PLC 最大重连次数
-```
-
-| 参数                        | 类型  | 说明                                      |
-|-----------------------------|-------|-------------------------------------------|
-| `lidar_connect_max_retries` | `int` | 激光雷达连接失败后的最大重连尝试次数       |
-| `plc_connect_max_retries`   | `int` | PLC 连接失败后的最大重连尝试次数           |
-
-#### 7. 调试与可视化参数
-
-```toml
-translate_data_origin = 2  # 1=统一原点（同一坐标系），2=各自原点
-```
-
-| 参数                    | 类型  | 说明                                                                                      |
-|-------------------------|-------|-------------------------------------------------------------------------------------------|
-| `translate_data_origin` | `int` | `1`：所有激光数据折算到统一坐标系原点；`2`：各激光使用各自坐标系，由各激光自身原点出发   |
-
-#### 8. 设备堆栈与线程参数
-
-```toml
-queue_size      = 1500  # 工件数据队列长度
-threadpool_size = 3     # 旧配置兼容；三种模式保存不再使用线程池
-```
-
-| 参数              | 类型  | 说明                                    |
-|-------------------|-------|-----------------------------------------|
-| `queue_size`      | `int` | 工件数据队列堆栈数量                    |
-| `threadpool_size` | `int` | 旧配置兼容保留；保存已移至独立进程          |
-
----
-
-### 4.5 `ProcessConfig.toml` — 数据处理参数
-
-**功能**：`complete_workpiece` 策略专用，控制工件分区、分枪等处理算法。
-
-```toml
-y_threshold            = 10   # 按 Y 间隔排序阈值（mm）
-z_threshold            = 10   # 按 Z 间隔排序阈值（mm）
-jig_threshold          = 100  # 挂具距离最上平面 Y 的起始距离（mm）
-x_range                = 300  # 判断为柜体的 X 轴范围（mm），大于此值判定为柜体
-y_range                = 300  # 判断为柜体的 Y 轴范围（mm）
-z_range                = 300  # 判断为柜体的 Z 轴范围（mm）
-find_boundary_type     = 2    # 找分区方式（1=固定6分区，2=随机分区）
-y_partition_threshold  = 80   # 合并分区 Y 轴阈值（mm），小于此值不认为是独立分区
-z_partition_threshold  = 200  # 合并分区 Z 轴阈值（mm）
-send_data_type         = 2    # 发送数据方式（1=分帧发送，2=整方块数据发送）
-find_y_plane           = 0.5  # 查找最上平面 Y 所占百分比
-```
-
-| 参数                    | 类型    | 说明                                            |
-|-------------------------|---------|-------------------------------------------------|
-| `jig_threshold`         | `int`   | 挂具检测起始距离（mm）                          |
-| `x_range`               | `int`   | 柜体 X 方向尺寸判定阈值（mm）                   |
-| `y_range`               | `int`   | 柜体 Y 方向尺寸判定阈值（mm）                   |
-| `z_range`               | `int`   | 柜体 Z 方向尺寸判定阈值（mm）                   |
-| `find_boundary_type`    | `int`   | `1`=固定6分区算法，`2`=随机分区算法             |
-| `y_partition_threshold` | `int`   | Y 方向合并分区最小距离阈值（mm）                |
-| `z_partition_threshold` | `int`   | Z 方向合并分区最小距离阈值（mm）                |
-| `send_data_type`        | `int`   | `1`=分帧发送模式，`2`=整块数据发送模式          |
-| `find_y_plane`          | `float` | 最上平面检测的 Y 轴百分比参数                   |
-
----
-
-### 4.6 `MachineConfig.toml` — 机器人轴配置
-
-**功能**：定义喷涂机器人各轴的参数配置，每个节对应一把喷枪/轴组。
-
-```toml
-[0]
-sn                 = 0           # 序号
-type               = 1           # 类型（1=2轴，2=4轴）
-offset_x           = 625         # X 轴偏移量（mm）
-offset_z           = 4440        # Z 轴偏移量（mm）
-axis_num           = 2           # 轴数量
-z_offset           = 120         # Z 轴运动偏移（mm）
-y_offset           = 100         # Y 轴运动偏移（mm）
-y_speed            = 300         # Y 轴运动速度（mm/s）
-x_offset           = 100         # X 轴运动偏移（mm）
-x_speed            = 300         # X 轴运动速度（mm/s）
-total_cycles       = 2           # 喷涂总循环次数
-install_orietation = "left"      # 安装方向
-limit_pos          = [1200, 1450, 1000, 180]  # 各轴限位位置
-axis_enable        = [1, 1]      # 各轴使能状态（1=使能，0=禁用）
-x_origin_pos       = [1560, 2010] # 各 X 轴原点位置
-```
-
----
-
-### 4.7 `SprayConfig.toml` — 喷涂参数
-
-**功能**：定义喷枪运动参数、速度限制和尺寸范围。
-
-```toml
-gun_distance          = 450   # 每把枪 Y 轴间距，用于分枪（mm）
-x_pre_distance        = 30    # X 轴提前定位安全距离（mm）
-spray_width_distance  = 80    # 喷枪宽度，用于分区计算（mm）
-spray_pos_tolerance   = 10    # 喷涂伺服定位公差（mm）
-rect_threshold        = 150   # 喷涂分段间隔阈值（mm），大于 150 则分 6 段
-x_offset_max          = 300   # X 轴偏移最大值（mm）
-y_offset_max          = 300   # Y 轴偏移最大值（mm）
-z_offset_max          = 300   # Z 轴偏移最大值（mm）
-x_offset_min          = 50    # X 轴偏移最小值（mm）
-y_offset_min          = 50    # Y 轴偏移最小值（mm）
-z_offset_min          = 50    # Z 轴偏移最小值（mm）
-lidar_scan_speed_max  = 50    # 激光采数最大速度
-x_speed_max           = 620   # X 轴最大运动速度（mm/s）
-y_speed_max           = 590   # Y 轴最大运动速度（mm/s）
-z_speed_max           = 150   # Z 轴最大运动速度（mm/s）
-r_speed_max           = 150   # R 轴最大运动速度
-total_cycles_max      = 20    # 喷涂次数最大值
-lidar_scan_speed      = 25    # 激光采数速度
-max_size_y_max        = 4000  # Y 轴最大尺寸上限（mm）
-size_y_max            = 2500  # Y 轴尺寸最大值（mm）
-min_size_y_min        = 500   # Y 轴最小尺寸下限（mm）
-size_y_min            = 1500  # Y 轴尺寸最小值（mm）
-```
-
----
-
-## 5. PLC 通信帧格式
-
-系统通过 TCP/UDP 与 PLC 交换固定格式的二进制帧。V2.0 的帧定义位于 `model/plc/MovingFrameData.py`，字段类型定义在 `model/plc/PlcFrame.py`。
-
-### 5.1 `SendMovingFrameData`（发送帧）
-
-系统向 PLC 发送的控制数据帧，**有效载荷固定为 206 字节**（不含帧头/帧尾）。不足长度时会自动补 `0x00`。
-
-| 字段名       | 类型    | 字节数 | 偏移量 | 说明                           |
-|--------------|---------|--------|--------|--------------------------------|
-| `Enable`     | `Int32` | 4      | 0      | 使能位/设备运动位/心跳位        |
-| `Gun_Cont1`  | `Int32` | 4      | 4      | 喷枪控制字 1                   |
-| `Gun_Cont2`  | `Int32` | 4      | 8      | 喷枪控制字 2                   |
-| `Operate`    | `Int16` | 2      | 12     | 操作指令字                     |
-| `AxisList`   | `32 × AxisData` | 192 | 14 | 32 组轴控制数据，每组含 `Pos`/`Speed`/`Status` |
-
-```python
-from model.plc.MovingFrameData import SendMovingFrameData, AxisData
-
-# 创建发送帧
-frame = SendMovingFrameData(Enable=1, Gun_Cont1=0, Gun_Cont2=0, Operate=1)
-frame.AxisList[0] = AxisData(Pos=100, Speed=200, Status=1)
-
-# 序列化（原始载荷长度为 206 字节）
-raw = frame.to_bytes()
-assert len(raw) == SendMovingFrameData.FRAME_SIZE    # 206
-
-# 通过 PlcCommon.send_frame() 发送
-plc.send_frame(frame)
-```
-
-**V2.0 说明**：`AxisList` 使用 `Repeat(32)` 定义 32 组 `AxisData`，每组轴数据结构如下：
-
-```python
-@dataclass
-class AxisData(PlcFrame):
-    Pos:    Annotated[int, Int16()] = 0
-    Speed:  Annotated[int, Int16()] = 0
-    Status: Annotated[int, Int16()] = 0
-```
-
-### 5.2 `ReceiveMovingFrameData`（接收帧）
-
-系统从 PLC 接收的状态数据帧，**有效载荷固定为 206 字节**（不含帧头/帧尾）。
-
-| 字段名        | 类型    | 字节数 | 偏移量 | 说明                          |
-|---------------|---------|--------|--------|-------------------------------|
-| `ChainPulse`  | `Int32` | 4      | 0      | 链条当前脉冲数                |
-| `ChainSpeed`  | `Int32` | 4      | 4      | 链条当前速度                  |
-| `ChainCountMM`| `Int16` | 2      | 8      | 链条毫米计数                  |
-| `Status`      | `Int16` | 2      | 10     | 公共状态位                    |
-| `Operate`     | `Int16` | 2      | 12     | 远程操作/心跳位               |
-| `AxisList`    | `32 × AxisData` | 192 | 14 | 32 组轴状态数据               |
-
-```python
-from model.plc.MovingFrameData import ReceiveMovingFrameData
-
-# 反序列化
-frame, _ = ReceiveMovingFrameData.from_bytes(payload)
-print(frame.ChainPulse, frame.ChainCountMM, len(frame.AxisList))
-
-# 通过 PlcCommon.scan() 自动接收并解析
-data = plc.scan(connection_type="tcp")
-pulse = data.ChainPulse   # 链条脉冲
-count_mm = data.ChainCountMM  # 毫米计数
-axis0 = data.AxisList[0]      # 第 1 组轴数据
-```
-
-**修改收发帧字段**：同样在 `MovingFrameData.py` 中修改，并同步检查 `FRAME_SIZE` 与 PLC 端协议是否一致。
-
-```python
-@dataclass
-class ReceiveMovingFrameData(PlcFrame):
-    BYTE_ORDER = '>'
-    FRAME_SIZE = 206
-    ChainPulse:   Annotated[int, Int32()] = 0
-    ChainSpeed:   Annotated[int, Int32()] = 0
-    ChainCountMM: Annotated[int, Int16()] = 0
-    Status:       Annotated[int, Int16()] = 0
-    Operate:      Annotated[int, Int16()] = 0
-```
-
-### 5.3 帧封装协议
-
-所有 PLC 通信帧使用固定帧头/帧尾封装：
-
-```
-┌─────────┬──────────────┬─────────┐
-│  START  │   PAYLOAD    │   END   │
-│ 4 bytes │   N bytes    │ 4 bytes │
-│02 02 02 02│  frame data │03 03 03 03│
-└─────────┴──────────────┴─────────┘
-```
-
-| 字段      | 值                          | 字节数 |
-|-----------|-----------------------------|--------|
-| `START`   | `0x02 0x02 0x02 0x02`       | 4      |
-| `PAYLOAD` | 帧序列化数据                | N      |
-| `END`     | `0x03 0x03 0x03 0x03`       | 4      |
-
-- V2.0 发送总包大小：`4 + 206 + 4 = 214 字节`
-- V2.0 接收总包大小：`4 + 206 + 4 = 214 字节`
-
-**PLC 读命令**（系统每次读数据时先发送此固定请求包）：
-
-```
-0x02 0x02 0x02 0x02 0x01 0x03 0x03 0x03 0x03
-```
-
-### 5.4 字段类型参考
-
-`PlcFrame` 支持的二进制类型（定义在 `model/plc/PlcFrame.py`）：
-
-| Python 类型注解                     | 二进制格式    | 字节数 | 说明              |
-|-------------------------------------|---------------|--------|-------------------|
-| `Annotated[int, Int16()]`           | 有符号 16-bit | 2      | 范围 ±32767       |
-| `Annotated[int, UInt16()]`          | 无符号 16-bit | 2      | 范围 0~65535      |
-| `Annotated[int, Int32()]`           | 有符号 32-bit | 4      | 范围 ±2147483647  |
-| `Annotated[int, UInt32()]`          | 无符号 32-bit | 4      | 范围 0~4294967295 |
-| `Annotated[float, Float32()]`       | 32-bit 浮点   | 4      | IEEE 754          |
-| `Annotated[str, FixedStr(N)]`       | 定长字符串    | N      | UTF-8, `\x00` 填充|
-
-字节序默认为**大端序（Big-Endian）**，可通过类属性修改：
-
-```python
-BYTE_ORDER = '>'  # 大端序（默认）
-BYTE_ORDER = '<'  # 小端序
-```
-
----
-
-## 6. 修改策略与参数指南
-
-### 6.1 切换到 `frame_by_frame`（逐帧传送带）
-
-1. 修改 `model/tomls/ModeConfig.toml`：`strategy_name=1`，保存后重启软件。
-2. 配置 `ReadDataConfig.toml`：
-   - 调整 `combined_y_min`、`combined_y_max` 为实际工件 Y 轴范围
-   - 设置 `y_threshold`（Y 分层粒度，影响发送数据密度）
-   - 设置 `pulse_to_mm`（当前产线脉冲换算系数）
-   - 设置 `fifo_unit_mm`（与 PLC FIFO 增量一致）
-   - 设置 `max_fifo`（与 PLC FIFO 最大值一致）
-
-### 6.2 切换到 `continuous_bidirectional`（往返扫描）
-
-1. 修改 `model/tomls/ModeConfig.toml`：`strategy_name=3`，保存后重启软件。
-2. 配置 `ReadDataConfig.toml`：
-   - 设置 `max_swing_pulse`（往返扫描脉冲范围）
-   - 设置 `swing_threshold`（端点检测阈值）
-   - 设置 `max_scan_length`（最大单次扫描长度）
-
-### 6.3 切换到 `complete_workpiece`（完整工件）
-
-1. 修改 `model/tomls/ModeConfig.toml`：`strategy_name=2`，保存后重启软件。
-2. 系统自动启动 `DataProcessingProcess`（无需手动配置）
-3. 配置 `ReadDataConfig.toml`：
-   - 设置 `start_skip_mm`（启动跳过距离）
-   - 设置 `linked_stop_distance_mm`（多方向联动停止距离）
-4. 配置 `ProcessConfig.toml`：
-   - 设置 `find_boundary_type`（分区算法类型）
-   - 设置 `send_data_type`（发送数据格式）
-
----
-
-## 7. 进程架构说明
-
-### 进程通信队列
-
-| 队列名               | 生产者                  | 消费者                  | 数据格式                                      |
-|----------------------|-------------------------|-------------------------|-----------------------------------------------|
-| `pulse_queue`        | `PlcCommunicationProcess`| `LidarAcquisitionProcess`| `{"pulse": int, "fifo": int, "status": str}` |
-| `raw_data_queue`     | `LidarAcquisitionProcess`| `PlcCommunicationProcess`或下游| 依策略不同（见下文）                    |
-| `viz_queue`          | `LidarAcquisitionProcess`| 主进程可视化             | `{"points": ndarray, "boxes": ...}`           |
-| `machine_data_queue` | `DataProcessingProcess`  | `PlcCommunicationProcess`| 处理后的机器人运动数据                        |
-
-### `raw_data_queue` 数据格式（按策略）
-
-**`frame_by_frame`**：
-
-```python
-{
-        "fifo":         int,           # FIFO 编号
-        "repeat_count": int,           # FIFO 跳变时的补发次数，V2.0 新增
-        "lidar_status": int,           # 激光状态码，V2.0 新增
-        "left":         AxisFrameData, # 左侧点云帧数据
-        "right":        AxisFrameData, # 右侧点云帧数据
-        # 可按配置扩展：
-        # "left_upper":  AxisFrameData,
-        # "right_upper": AxisFrameData,
-}
-```
-
-其中 `AxisFrameData.FrameData` 为 `List[AxisData]`，每个 `AxisData`：
-- 对 `left` / `right`：
-    - `H_Axis`：Y 轴坐标层（mm）
-    - `V_Axis_Max`：该 Y 层内 X 最大值（mm）
-    - `V_Axis_Min`：该 Y 层内 X 最小值（mm）
-- 对 `left_upper` / `right_upper`：
-    - `H_Axis`：X 轴坐标层（mm）
-    - `V_Axis_Max`：该 X 层内 Y 最大值（mm）
-    - `V_Axis_Min`：该 X 层内 Y 最小值（mm）
-
-**`continuous_bidirectional`**：
-
-```python
-{
-    "left":  {"data": ndarray},   # 左侧完整点云 (N×3)
-    "right": {"data": ndarray},   # 右侧完整点云 (N×3)
-}
-```
-
-**`complete_workpiece`**：
-
-```python
-{
-    "lidar_status": int,  # 激光状态码
-    # 以下字段按当前启用方向动态生成：
-    "left_stop_pulse":  int,
-    "left_data":        ndarray,
-    "right_stop_pulse": int,
-    "right_data":       ndarray,
-}
-```
-
-> **V2.0 补充**：当仅用于状态联锁时，`raw_data_queue` 还可能收到只包含 `lidar_status` 与 `reset_queue` 的状态消息。
-
-### PLC 通信进程（工厂方法）
-
-```python
-# 自动根据策略选择正确的队列
-plc_handler = PlcCommunicationProcess.create(
-    strategy_name="frame_by_frame",  # 或 "continuous_bidirectional" / "complete_workpiece"
-    raw_data_queue=raw_data_queue,
-    pulse_queue=pulse_queue,
-    machine_data_queue=machine_data_queue,  # 仅 complete_workpiece 需要
-)
-```
-
----
-
-## 8. 常见问题
-
-### Q1: 如何调整点云有效范围？
-
-修改 `ReadDataConfig.toml` 中的滤波参数：
-
-```toml
-# 统一原点模式（translate_data_origin = 1）
-combined_x_min = 1150   # 根据实际安装位置调整
-combined_x_max = 2500
-combined_y_min = 1100
-combined_y_max = 3800
-```
-
-### Q2: 链条脉冲系数如何确定？
-
-`pulse_to_mm` 是脉冲数到毫米的换算系数。通过以下方式标定：
-1. 让链条移动已知距离 D（mm）
-2. 记录脉冲变化量 P
-3. `pulse_to_mm = P / D`（单位：pulse/mm）
-
-> 示例：六楼实验室链条 `pulse_to_mm = 12.4`（即每移动 1mm，脉冲增加 12.4）
-
-### Q3: FIFO 回绕处理
-
-系统自动处理 FIFO 从 `max_fifo`（默认 29999）回绕到 0 的情况。确保 `max_fifo` 与 PLC 端配置一致。
-
-### Q4: 激光雷达连接失败如何处理？
-
-系统内置自动重连机制，重连次数由 `lidar_connect_max_retries` 控制（默认 10000 次）。
-每次重连间隔 10 秒。如果需要快速失败，可将该值设为较小数（如 3）。
-
-### Q5: 如何修改 PLC 通信数据格式？
-
-1. 编辑 `model/plc/MovingFrameData.py`
-2. 新增/删除/修改字段（使用 `Annotated[type, WireType()]` 格式）
-3. **同步检查 `FRAME_SIZE` 常量**（固定帧协议下需与 PLC 端一致）
-4. 确认 PLC 端字段顺序与本文件一致
-5. 检查字节序设置（`BYTE_ORDER = '>'` 大端 / `'<'` 小端）
-
-### Q6: 模拟模式如何开启/关闭？
-
-在 `control/PlcCommunicationProcess.py` 中设置：
-
-```python
-self.simulation_mode = True   # True=模拟模式（不连接PLC），False=实际连接PLC
-```
+更多说明：[模块目录](docs/module-layout.md)、[开发运行方式](docs/qt-developer-modes.md)、[部署检查与验收](docs/qt-deployment.md)。

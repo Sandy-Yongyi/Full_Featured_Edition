@@ -11,7 +11,7 @@ import time
 
 import numpy as np
 
-from model.utils.PointCloudSaveBuffer import block_view
+from model.pointcloud.PointCloudSaveBuffer import block_view
 from model.utils.ProcessHeartbeat import ProcessHeartbeat
 from model.utils.WorkpieceOriginUtil import transform_points_for_origin
 

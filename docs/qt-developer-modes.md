@@ -35,7 +35,7 @@ python main.py --control-type 3 --data-path 'D:\draw_points\sample.txt'
 python main.py --control-type 3 --data-path 'D:\draw_points\case' --data-name 'sample.txt'
 ```
 
-示例路径需要替换为实际文件。命令行相对路径按应用初始化后的项目/应用目录解析，建议使用绝对路径。代码中也可调用 `qt_main.build_controller(control_type=..., data_path=..., data_name=...)`；该函数只构建控制器，不自动启动进程。
+示例路径需要替换为实际文件。命令行相对路径按应用初始化后的项目/应用目录解析，建议使用绝对路径。代码中也可调用 `model.runtime.qt_main.build_controller(control_type=..., data_path=..., data_name=...)`；该函数只构建控制器，不自动启动进程。
 
 ## 进程组合
 
@@ -66,7 +66,7 @@ python main.py --control-type 3 --data-path 'D:\draw_points\case' --data-name 's
 - 文件读取在独立子进程完成，界面通过原有可视化队列显示；失败通过告警反馈。导入完成后该进程等待，避免被监控误判为异常退出。
 - 设备配置和扫描参数只读，后端也拒绝扫描参数保存与设备控制命令。点击“停止查看”会清空场景并退出导入进程；之后可重新导入同一路径的最新内容。
 
-`qt_preview.py` 继续用于空场样式预览，不负责导入文件；它与方式 3 的用途不同。
+`python -m model.runtime.qt_preview` 继续用于空场样式预览，不负责导入文件；它与方式 3 的用途不同。
 
 ## 最近事件与识别框配色
 

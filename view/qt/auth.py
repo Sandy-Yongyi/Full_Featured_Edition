@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit
-from control.UiState import LogEvent
+from model.telemetry.UiState import LogEvent
 
 
 class PasswordAuthorizationDialog(QDialog):

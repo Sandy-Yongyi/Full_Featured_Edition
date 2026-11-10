@@ -18,9 +18,9 @@ class UiTelemetryTests(unittest.TestCase):
         self.assertTrue(output.get_nowait()["connected"])
 
     def test_runtime_requires_fresh_feedback_even_when_workers_are_alive(self):
-        from control.QtPipelineRuntime import QtPipelineRuntime
-        from control.UiState import TaskState
-        runtime = QtPipelineRuntime()
+        from control.PipelineRuntime import PipelineRuntime
+        from model.telemetry.UiState import TaskState
+        runtime = PipelineRuntime()
         runtime.ui_status_queue = queue.Queue()
         runtime.plc_handler = SimpleNamespace(is_alive=lambda: True)
         runtime.lidar_acquisition = SimpleNamespace(is_alive=lambda: True)
@@ -28,14 +28,14 @@ class UiTelemetryTests(unittest.TestCase):
         task = TaskState(name="当前工件", stage="外侧前喷")
         runtime.ui_status_queue.put({"source": "plc", "timestamp": 100, "connected": True, "pulse": 18229, "motion": "moving_forward", "task": task})
         runtime.ui_status_queue.put({"source": "lidar", "timestamp": 100, "connected": True, "status": 0})
-        with patch("control.QtPipelineRuntime.time.monotonic", return_value=101):
+        with patch("control.PipelineRuntime.time.monotonic", return_value=101):
             snapshot = runtime.poll()
         self.assertTrue(snapshot["devices"][0].online)
         self.assertTrue(snapshot["devices"][1].online)
         self.assertFalse(snapshot["devices"][2].online)  # Servo ready has no defined feedback yet.
         self.assertEqual(18229, snapshot["chain_position"])
         self.assertEqual(task, snapshot["task"])
-        with patch("control.QtPipelineRuntime.time.monotonic", return_value=110):
+        with patch("control.PipelineRuntime.time.monotonic", return_value=110):
             stale = runtime.poll()
             self.assertFalse(stale["devices"][0].online)
             self.assertEqual((), stale["task"].gun_plans)
@@ -56,7 +56,7 @@ class UiTelemetryTests(unittest.TestCase):
         self.assertEqual(18229, message["pulse"])
 
     def test_lidar_feedback_distinguishes_healthy_and_failed_scan(self):
-        from control.LidarAcquisitionProcess import LidarAcquisitionProcess
+        from model.lidar.LidarAcquisitionProcess import LidarAcquisitionProcess
         from model.utils.UiTelemetry import UiStatusPublisher
         output = queue.Queue()
         state = SimpleNamespace(ui_status=UiStatusPublisher(output, "lidar"),

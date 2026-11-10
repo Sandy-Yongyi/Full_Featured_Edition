@@ -186,6 +186,7 @@ class BaseLidar(ABC):
         pass
 
     def _to_cartesian_diff_origin(self, radius: np.ndarray, angles: np.ndarray) -> np.ndarray:  # 不同安装方式激光使用不同原点转换方法
+        x = y = None
         if self.start_angle_direction == 1:  # 0为0度在下方, 1为0度在上方, 2为0度朝右边, 3为0度朝左边, 都是面对激光正面逆时针0-180
             if self.install_orietation == "left":
                 x = radius * np.sin(angles) + self.diff_origin_offset_x
@@ -232,9 +233,12 @@ class BaseLidar(ABC):
             elif self.install_orietation == "right":
                 x = -(radius * np.cos(angles)) + self.diff_origin_offset_x
                 y = -(radius * np.sin(angles)) + self.diff_origin_offset_y
+        if x is None or y is None:
+            raise ValueError(f"Unsupported lidar orientation: {self.install_orietation}, angle direction: {self.start_angle_direction}")
         return np.column_stack((x, y))
 
     def _to_cartesian_same_origin(self, radius: np.ndarray, angles: np.ndarray) -> np.ndarray:  # 不同安装方式激光使用同一原点转换方法
+        x = y = None
         if self.start_angle_direction == 1:  # 0为0度在下方, 1为0度在上方, 2为0度朝右边, 3为0度朝左边, 都是面对激光正面逆时针0-180
             if self.install_orietation == "left":
                 x = radius * np.sin(angles) + self.same_origin_offset_x
@@ -273,6 +277,8 @@ class BaseLidar(ABC):
         elif self.start_angle_direction == 3:
             x = radius * np.cos(angles) + self.same_origin_offset_x
             y = -(radius * np.sin(angles)) + self.same_origin_offset_y
+        if x is None or y is None:
+            raise ValueError(f"Unsupported lidar orientation: {self.install_orietation}, angle direction: {self.start_angle_direction}")
         return np.column_stack((x, y))
 
 

@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from control.RuntimeStateCollector import RuntimeStateCollector
+from model.telemetry.RuntimeStateCollector import RuntimeStateCollector
 
 
 class _Filter:

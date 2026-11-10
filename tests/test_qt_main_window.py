@@ -19,7 +19,7 @@ class FakeController:
 
 class IndustrialMainWindowTests(unittest.TestCase):
     def test_all_pages_refresh_even_when_hidden(self):
-        from control.UiState import UiState
+        from model.telemetry.UiState import UiState
         from view.qt.main_window import IndustrialMainWindow
         window = IndustrialMainWindow(FakeController())
         state = UiState(strategy_name='frame_by_frame', chain_position=987)
@@ -59,7 +59,7 @@ class IndustrialMainWindowTests(unittest.TestCase):
         self.assertEqual(window.route_names(), ("realtime", "device_control", "configuration"),)
 
     def test_running_state_keeps_stop_enabled(self):
-        from control.UiState import UiState
+        from model.telemetry.UiState import UiState
         from view.qt.main_window import IndustrialMainWindow
 
         window = IndustrialMainWindow(controller=FakeController())
@@ -67,7 +67,7 @@ class IndustrialMainWindowTests(unittest.TestCase):
         self.assertTrue(window.realtime_page.stop_button.isEnabled())
 
     def test_workspace_pages_accept_runtime_state_and_expose_inline_configuration(self):
-        from control.UiState import TaskState, UiState
+        from model.telemetry.UiState import TaskState, UiState
         from view.qt.main_window import IndustrialMainWindow
 
         window = IndustrialMainWindow(controller=FakeController())
@@ -86,7 +86,7 @@ class IndustrialMainWindowTests(unittest.TestCase):
         self.assertIsNotNone(window.configuration_page.tabs)
 
     def test_header_status_follows_runtime_state(self):
-        from control.UiState import UiState
+        from model.telemetry.UiState import UiState
         from view.qt.main_window import IndustrialMainWindow
 
         window = IndustrialMainWindow(controller=FakeController())
@@ -95,7 +95,7 @@ class IndustrialMainWindowTests(unittest.TestCase):
         self.assertIn("运行中", window.system_status.text())
 
     def test_device_badges_keep_device_names_when_feedback_updates(self):
-        from control.UiState import DeviceState, UiState
+        from model.telemetry.UiState import DeviceState, UiState
         from view.qt.main_window import IndustrialMainWindow
         window = IndustrialMainWindow(FakeController())
         window.apply_state(UiState(strategy_name="complete_workpiece", devices=(
@@ -105,7 +105,7 @@ class IndustrialMainWindowTests(unittest.TestCase):
         self.assertIn("伺服", window.realtime_page.servo_badge.text())
 
     def test_close_waits_for_safe_stop_and_then_closes(self):
-        from control.UiState import UiState
+        from model.telemetry.UiState import UiState
         from PyQt6.QtGui import QCloseEvent
         from view.qt.main_window import IndustrialMainWindow
 

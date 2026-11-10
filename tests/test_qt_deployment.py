@@ -29,7 +29,7 @@ class DeploymentTests(unittest.TestCase):
         checker = Mock(return_value=23)
         previous = Path.cwd()
         try:
-            with patch.dict(sys.modules, {"deployment_check": type("Checker", (), {"main": checker})}), \
+            with patch.dict(sys.modules, {"model.runtime.deployment_check": type("Checker", (), {"main": checker})}), \
                     patch.object(sys, "argv", ["main.py", "--check-deployment"]), \
                     patch("main.multiprocessing.freeze_support"), \
                     patch("main.disable_console_interaction"), \
@@ -41,7 +41,7 @@ class DeploymentTests(unittest.TestCase):
             os.chdir(previous)
 
     def test_config_check_collects_missing_and_invalid_files_without_rewriting_them(self):
-        from deployment_check import check_configurations
+        from model.runtime.deployment_check import check_configurations
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             configs = self.make_configs(root)
@@ -58,7 +58,7 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(before, {path.name: path.read_bytes() for path in configs.iterdir()})
 
     def test_invalid_strategy_is_reported_even_when_toml_syntax_is_valid(self):
-        from deployment_check import check_configurations
+        from model.runtime.deployment_check import check_configurations
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             configs = self.make_configs(root)
@@ -67,20 +67,20 @@ class DeploymentTests(unittest.TestCase):
             self.assertFalse(results["ModeConfig.toml"].ok)
 
     def test_failed_configuration_produces_nonzero_exit_without_dumping_config_values(self):
-        import deployment_check
+        from model.runtime import deployment_check
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             configs = self.make_configs(root)
             (configs / "MachineConfig1.toml").write_text(
                 'auth_password = "fixture-secret-value"\nx = 1\nx = 2\n', encoding="utf-8")
             output = io.StringIO()
-            with patch("deployment_check.application_directory", return_value=root), contextlib.redirect_stdout(output):
+            with patch("model.runtime.deployment_check.application_directory", return_value=root), contextlib.redirect_stdout(output):
                 self.assertEqual(1, deployment_check.main())
             self.assertIn("[FAIL] MachineConfig1.toml", output.getvalue())
             self.assertNotIn("fixture-secret-value", output.getvalue())
 
     def test_repository_configurations_all_parse_after_confirmed_sn3_conflict_resolution(self):
-        from deployment_check import check_configurations
+        from model.runtime.deployment_check import check_configurations
         from model.utils.TomlLoader import TomlLoader
         root = Path(__file__).resolve().parents[1]
         results = check_configurations(root)
@@ -89,7 +89,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertFalse(config["3"]["top_chain_hold_enabled"])
 
     def test_platform_plugin_check_reports_missing_qwindows(self):
-        from deployment_check import check_windows_plugin
+        from model.runtime.deployment_check import check_windows_plugin
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.assertFalse(check_windows_plugin(root).ok)
@@ -113,7 +113,7 @@ sys.argv = ['main.py', '--check-deployment']
 result = main.launch()
 from PyQt6.QtWidgets import QApplication
 assert QApplication.instance() is None
-assert 'control.QtPipelineRuntime' not in sys.modules
+assert 'control.PipelineRuntime' not in sys.modules
 assert 'model.utils.LoggerUtil' not in sys.modules
 raise SystemExit(result)
 """

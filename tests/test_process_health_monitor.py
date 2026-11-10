@@ -1,6 +1,6 @@
 import unittest
 
-from control.ProcessHealthMonitor import ProcessHealthMonitor
+from model.runtime.ProcessHealthMonitor import ProcessHealthMonitor
 
 
 class _Process:

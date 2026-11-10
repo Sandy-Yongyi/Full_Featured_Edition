@@ -6,10 +6,10 @@ import sys
 
 from PyQt6.QtWidgets import QApplication
 
-from control.UiState import DeviceState, LogEvent, TaskState, UiState
-from control.QtUiBridge import QtUiBridge
+from model.telemetry.UiState import DeviceState, LogEvent, TaskState, UiState
+from view.qt.QtUiBridge import QtUiBridge
 from view.qt.main_window import IndustrialMainWindow
-from app_bootstrap import prepare_environment
+from model.runtime.app_bootstrap import prepare_environment
 
 
 class PreviewController:

@@ -133,7 +133,7 @@ class TaskFeedbackTests(unittest.TestCase):
         import pickle
         from unittest.mock import patch
         from control.PlcCommunicationProcess import PlcCommunicationProcess
-        from control.QtPipelineRuntime import QtPipelineRuntime
+        from control.PipelineRuntime import PipelineRuntime
         from model.utils.UiTelemetry import UiStatusPublisher
         output = queue.Queue()
         process = SimpleNamespace(
@@ -146,15 +146,15 @@ class TaskFeedbackTests(unittest.TestCase):
             PlcCommunicationProcess._publish_ui_status(process, connected=True)
         # multiprocessing.Queue serializes the new UI-neutral detail rows.
         message = pickle.loads(pickle.dumps(output.get_nowait()))
-        runtime = QtPipelineRuntime()
+        runtime = PipelineRuntime()
         runtime.ui_status_queue = queue.Queue()
         runtime.ui_status_queue.put(message)
         runtime.plc_handler = SimpleNamespace(is_alive=lambda: True)
-        with patch("control.QtPipelineRuntime.time.monotonic", return_value=101):
+        with patch("control.PipelineRuntime.time.monotonic", return_value=101):
             fresh_task = runtime.poll()["task"]
         self.assertEqual("重采定位中", fresh_task.stage)
         self.assertEqual((), fresh_task.details)
-        with patch("control.QtPipelineRuntime.time.monotonic", return_value=110):
+        with patch("control.PipelineRuntime.time.monotonic", return_value=110):
             stale_task = runtime.poll()["task"]
         self.assertEqual((), stale_task.details)
         self.assertEqual((), stale_task.gun_plans)

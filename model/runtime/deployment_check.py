@@ -5,7 +5,7 @@ from importlib import import_module
 from pathlib import Path
 import sys
 
-from app_bootstrap import application_directory
+from model.runtime.app_bootstrap import application_directory
 
 
 @dataclass(frozen=True, slots=True)

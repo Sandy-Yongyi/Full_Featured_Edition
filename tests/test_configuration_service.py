@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from control.ConfigurationService import ConfigurationService
+from model.utils.ConfigurationService import ConfigurationService
 
 
 class ConfigurationServiceTests(unittest.TestCase):

@@ -12,17 +12,17 @@ import queue
 import time
 from typing import Any
 
-from control.ConfigurationService import ConfigurationService
-from control.LidarAcquisitionProcess import LidarAcquisitionProcess
+from model.utils.ConfigurationService import ConfigurationService
+from model.lidar.LidarAcquisitionProcess import LidarAcquisitionProcess
 from control.PlcCommunicationProcess import PlcCommunicationProcess
-from control.RuntimeStateCollector import RuntimeStateCollector
-from control.ProcessHealthMonitor import ProcessHealthMonitor
-from control.PointCloudFileProcess import PointCloudFileProcess, resolve_txt_files
-from control.UiState import DeviceState, TaskState
+from model.telemetry.RuntimeStateCollector import RuntimeStateCollector
+from model.runtime.ProcessHealthMonitor import ProcessHealthMonitor
+from model.pointcloud.PointCloudFileProcess import PointCloudFileProcess, resolve_txt_files
+from model.telemetry.UiState import DeviceState, TaskState
 from model.dataprocess.DataFilter import DataFilter
 from model.utils.LidarDirectionUtil import get_active_lidar_config
 from model.utils.LoggerUtil import logger, manage_log_files, log_directory
-from model.utils.PointCloudSaveService import PointCloudSaveService, stop_pipeline
+from model.pointcloud.PointCloudSaveService import PointCloudSaveService, stop_pipeline
 from model.utils.StrategyUtil import is_complete_workpiece_mode, strategy_name_from_code
 from model.utils.TomlLoader import TomlLoader
 from model.utils.MachineConfigUtil import get_machine_config_path
@@ -49,7 +49,7 @@ class SubprocessRedirect:
             self._pending = ""
 
 
-class QtPipelineRuntime:
+class PipelineRuntime:
     """Production mode 2 plus developer TXT/PLC (1) and file-view (3) modes."""
 
     def __init__(self, config_dir: str | None = None, *, control_type: int = 2, data_path: str | None = None, data_name: str | None = None):

@@ -2,7 +2,7 @@
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
-from control.UiState import UiState
+from model.telemetry.UiState import UiState
 
 
 class QtUiBridge(QObject):

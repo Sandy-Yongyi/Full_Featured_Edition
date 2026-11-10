@@ -11,8 +11,8 @@ from collections.abc import Callable
 from queue import Empty, SimpleQueue
 from typing import Any, Protocol
 
-from control.UiState import LogEvent, UiState, TaskState
-from control.ShutdownCoordinator import ShutdownCoordinator
+from model.telemetry.UiState import LogEvent, UiState, TaskState
+from model.runtime.ShutdownCoordinator import ShutdownCoordinator
 
 
 class RuntimePort(Protocol):

@@ -16,7 +16,7 @@ class SceneUpdateTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_repeated_status_snapshots_do_not_upload_same_cloud_again(self):
-        from control.UiState import UiState
+        from model.telemetry.UiState import UiState
         from view.qt.pages import RealtimeControlPage
         page = RealtimeControlPage(SimpleNamespace())
         state = UiState(strategy_name="complete_workpiece", points=np.ones((10, 3)))
@@ -27,7 +27,7 @@ class SceneUpdateTests(unittest.TestCase):
 
     def test_empty_poll_keeps_scene_but_explicit_box_clear_removes_boxes(self):
         from control.ControlCenter import ControlCenter
-        from control.RuntimeStateCollector import RuntimeStateCollector
+        from model.telemetry.RuntimeStateCollector import RuntimeStateCollector
         from view.qt.pages import RealtimeControlPage
         frames = queue.Queue()
         collector = RuntimeStateCollector(queue.Queue(), None, preview_voxel_mm=0)

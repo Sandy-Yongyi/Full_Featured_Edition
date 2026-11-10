@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QScrollArea, QTabWidget, QVBoxLayout, QWidget
 
-from control.UiState import UiState
+from model.telemetry.UiState import UiState
 from view.qt.point_cloud_view import QtPointCloudView
 from view.qt import theme
 from view.qt.widgets import ControlButton, Panel, StatusBadge, RuntimeLogView
@@ -262,7 +262,7 @@ class DeviceConfigurationPage(QWidget):
         self._reload_devices()
 
     def _reload_devices(self) -> None:
-        from control.MachineConfigFrameControl import list_machine_devices
+        from model.utils.MachineConfiguration import list_machine_devices
 
         previous_sn = self.selected_device_sn
         self.selected_device_sn = None
@@ -307,8 +307,8 @@ class DeviceConfigurationPage(QWidget):
         self._load_device()
 
     def _load_device(self) -> None:
-        from control.MachineConfigFrameControl import load_machine_config_for_ui
-        from control.MachineConfigSchema import PARAM_LABELS, parameter_order
+        from model.utils.MachineConfiguration import load_machine_config_for_ui
+        from view.qt.MachineConfigSchema import PARAM_LABELS, parameter_order
 
         self.tabs.clear()
         self.fields = {}
@@ -369,7 +369,7 @@ class DeviceConfigurationPage(QWidget):
         self.tabs.addTab(scroller, title)
 
     def _save_device(self) -> None:
-        from control.MachineConfigFrameControl import save_machine_config_from_ui
+        from model.utils.MachineConfiguration import save_machine_config_from_ui
         try:
             if getattr(self.controller, "preview_mode", False) or not self._config_loaded or self._stopping:
                 return

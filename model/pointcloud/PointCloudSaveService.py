@@ -4,8 +4,8 @@ import multiprocessing
 import queue
 import time
 
-from control.PointCloudSaveProcess import PointCloudSaveProcess
-from model.utils.PointCloudSaveBuffer import SharedPointCloudPool
+from model.pointcloud.PointCloudSaveProcess import PointCloudSaveProcess
+from model.pointcloud.PointCloudSaveBuffer import SharedPointCloudPool
 from model.utils.TomlLoader import TomlLoader
 
 

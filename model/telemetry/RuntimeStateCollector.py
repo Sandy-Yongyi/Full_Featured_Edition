@@ -5,7 +5,7 @@ from __future__ import annotations
 import queue
 from datetime import datetime
 from typing import Any
-from control.UiState import LogEvent
+from model.telemetry.UiState import LogEvent
 
 
 class RuntimeStateCollector:

@@ -9,7 +9,7 @@ from unittest.mock import patch
 import numpy as np
 
 from control.ControlCenter import ControlCenter
-from control.RuntimeStateCollector import RuntimeStateCollector
+from model.telemetry.RuntimeStateCollector import RuntimeStateCollector
 from view.qt.main_window import IndustrialMainWindow
 
 
@@ -33,7 +33,7 @@ class FullEditionUiTests(unittest.TestCase):
 
     def test_authorized_close_waits_for_saving_before_destroy(self):
         from PyQt6.QtGui import QCloseEvent
-        from control.UiState import UiState
+        from model.telemetry.UiState import UiState
         stopped = []
         window = IndustrialMainWindow(SimpleNamespace(stop=lambda: stopped.append(True)))
         window.apply_state(UiState(strategy_name="complete_workpiece", running=True))

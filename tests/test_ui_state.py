@@ -3,7 +3,7 @@ import unittest
 
 class UiStateTests(unittest.TestCase):
     def test_empty_state_uses_safe_offline_defaults(self):
-        from control.UiState import UiState
+        from model.telemetry.UiState import UiState
 
         state = UiState.empty("complete_workpiece")
 
@@ -14,7 +14,7 @@ class UiStateTests(unittest.TestCase):
         self.assertEqual(state.logs, ())
 
     def test_log_history_keeps_only_latest_events(self):
-        from control.UiState import LogEvent, UiState
+        from model.telemetry.UiState import LogEvent, UiState
 
         state = UiState.empty("frame_by_frame")
         for index in range(3):

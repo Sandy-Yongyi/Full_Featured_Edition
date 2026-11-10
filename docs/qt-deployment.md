@@ -1,6 +1,6 @@
 # Qt 版本部署检查与构建
 
-生产入口为 `main.py`，空场预览入口为 `qt_preview.py`。`setup.py` 仅构建算法扩展，不生成 Qt 应用 EXE。
+生产入口为 `main.py`，空场预览入口为 `python -m model.runtime.qt_preview`。`model/build_extensions.py` 仅构建算法扩展，不生成 Qt 应用 EXE。
 
 ## 先进行只读自检
 

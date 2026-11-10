@@ -4,7 +4,6 @@ import os
 from typing import List
 import numpy as np
 from model.utils.LoggerUtil import logger
-# from model.plot.draw import PointCloudVisualizer
 from model.utils.MachineConfigUtil import normalize_offset_value
 from model.utils.TomlLoader import TomlLoader
 from model.dataprocess.DataFilter import DataFilter

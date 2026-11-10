@@ -8,7 +8,7 @@ import numpy as np
 
 class SaveServiceTests(unittest.TestCase):
     def setUp(self):
-        self.assertIsNotNone(importlib.util.find_spec("model.utils.PointCloudSaveService"), "saving lifecycle is not implemented")
+        self.assertIsNotNone(importlib.util.find_spec("model.pointcloud.PointCloudSaveService"), "saving lifecycle is not implemented")
         self.directory = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent)
 
     def tearDown(self):
@@ -16,8 +16,8 @@ class SaveServiceTests(unittest.TestCase):
             self.directory.cleanup()
 
     def test_sibling_service_waits_for_ready_and_drains_multiple_workpieces(self):
-        from model.utils.PointCloudSaveService import PointCloudSaveService
-        from model.utils.PointCloudSaveBuffer import PointCloudSaveBuffer
+        from model.pointcloud.PointCloudSaveService import PointCloudSaveService
+        from model.pointcloud.PointCloudSaveBuffer import PointCloudSaveBuffer
         service = PointCloudSaveService({"point_cloud_save_block_mb": .01, "point_cloud_save_block_count": 8}, self.directory.name)
         buffer = None
         try:
@@ -41,7 +41,7 @@ class SaveServiceTests(unittest.TestCase):
             service.abort()
 
     def test_bad_configuration_fails_before_acquisition_start(self):
-        from model.utils.PointCloudSaveService import PointCloudSaveService
+        from model.pointcloud.PointCloudSaveService import PointCloudSaveService
         service = PointCloudSaveService({"point_cloud_save_block_mb": .01, "point_cloud_save_block_count": 4, "point_cloud_save_format": "bad"}, self.directory.name)
         try:
             with self.assertRaisesRegex(RuntimeError, "txt or npy"):
@@ -50,7 +50,7 @@ class SaveServiceTests(unittest.TestCase):
             service.abort()
 
     def test_crashed_writer_cannot_be_reported_as_successfully_drained(self):
-        from model.utils.PointCloudSaveService import PointCloudSaveService
+        from model.pointcloud.PointCloudSaveService import PointCloudSaveService
         service = PointCloudSaveService({"point_cloud_save_block_mb": .01, "point_cloud_save_block_count": 4}, self.directory.name)
         try:
             service.start()
@@ -62,8 +62,8 @@ class SaveServiceTests(unittest.TestCase):
             service.abort()
 
     def test_real_disk_error_is_reported_and_no_completion_manifest_is_written(self):
-        from model.utils.PointCloudSaveService import PointCloudSaveService
-        from model.utils.PointCloudSaveBuffer import PointCloudSaveBuffer
+        from model.pointcloud.PointCloudSaveService import PointCloudSaveService
+        from model.pointcloud.PointCloudSaveBuffer import PointCloudSaveBuffer
         service = PointCloudSaveService({"point_cloud_save_block_mb": .01, "point_cloud_save_block_count": 4}, self.directory.name)
         buffer = None
         try:

@@ -3,7 +3,7 @@ import time
 import unittest
 
 from control.ControlCenter import ControlCenter
-from control.UiState import LogEvent
+from model.telemetry.UiState import LogEvent
 
 
 class _Runtime:
