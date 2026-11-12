@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QScrollArea, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QScrollArea, QSizePolicy, QTabWidget, QVBoxLayout, QWidget
 
 from model.telemetry.UiState import UiState
 from model.motionplan.motionutil.DeviceEnableHelper import validate_enable_transition
@@ -140,7 +141,8 @@ class RealtimeControlPage(QWidget):
         devices = {device.name: device for device in state.devices}
         for name, badge in (("PLC", self.plc_badge), ("激光", self.lidar_badge), ("伺服", self.servo_badge)):
             device = devices.get(name)
-            badge.set_status(f"{name} · {device.detail if device else '未连接'}", bool(device and device.online))
+            detail = device.detail if device else "未连接"
+            badge.set_status(f"{name} · {detail}" if detail else name, bool(device and device.online))
 
 
 class DeviceControlPage(QWidget):
@@ -155,6 +157,10 @@ class DeviceControlPage(QWidget):
         self._all_safe = False
         layout = QVBoxLayout(self)
         panel = Panel("设备控制")
+        title_item = panel.content_layout.itemAt(0)
+        title_label = title_item.widget() if title_item is not None else None
+        if isinstance(title_label, QLabel):
+            title_label.setStyleSheet(f"font-weight: 700; color: {theme.CYAN};")
         self.enable_button = ControlButton("设备总使能")
         self.enable_button.setCheckable(True)
         self.enable_button.clicked.connect(self._send)
@@ -165,11 +171,11 @@ class DeviceControlPage(QWidget):
         self.enable_hint = QLabel("等待 PLC 通讯")
         self.enable_hint.setWordWrap(True)
         self.enable_hint.setStyleSheet("color: #ffffff;")
-        self.device_grid.addWidget(self.enable_hint, 1, 0, 1, 2)
+        self.device_grid.addWidget(self.enable_hint, 0, 1)
         for column, title in enumerate(("左侧设备", "右侧设备")):
             label = QLabel(title)
             label.setStyleSheet(f"font-weight: 700; color: {theme.CYAN};")
-            self.device_grid.addWidget(label, 2, column)
+            self.device_grid.addWidget(label, 1, column)
             self.device_grid.setColumnStretch(column, 1)
         self.device_buttons = []
         for index, name in enumerate(self.DEVICE_NAMES):
@@ -177,7 +183,7 @@ class DeviceControlPage(QWidget):
             button.setCheckable(True)
             button.clicked.connect(self._send)
             self.device_buttons.append(button)
-            self.device_grid.addWidget(button, index % 3 + 3, index // 3)
+            self.device_grid.addWidget(button, index % 3 + 2, index // 3)
         panel.content_layout.addLayout(self.device_grid)
         layout.addWidget(panel)
         layout.addStretch(1)
@@ -253,19 +259,31 @@ class DeviceConfigurationPage(QWidget):
         self._loaded_strategy = None
         self._config_loaded = False
         self._stopping = False
-        layout = QVBoxLayout(self)
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(theme.ui_px(16))
         self.selected_device_sn = None
         self.device_buttons = {}
+        self.device_sidebar = QWidget()
+        self.device_sidebar.setFixedWidth(theme.ui_px(190))
+        sidebar_layout = QVBoxLayout(self.device_sidebar)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
         self.device_grid = QGridLayout()
-        layout.addLayout(self.device_grid)
+        self.device_grid.setVerticalSpacing(theme.ui_px(8))
+        sidebar_layout.addLayout(self.device_grid)
+        sidebar_layout.addStretch(1)
+        layout.addWidget(self.device_sidebar)
+        editor = QVBoxLayout()
+        layout.addLayout(editor, 1)
         self.parameter_title = QLabel("设备参数")
         self.parameter_title.setStyleSheet(f"font-weight: 700; font-size: {theme.ui_px(16)}px; color: {theme.CYAN};")
-        layout.addWidget(self.parameter_title)
+        editor.addWidget(self.parameter_title)
         self.tabs = QTabWidget()
-        layout.addWidget(self.tabs, 1)
+        editor.addWidget(self.tabs, 1)
         footer = QHBoxLayout()
-        self.save_result = QLabel("参数修改将在保存后写入当前策略配置。")
+        self.save_result = QLabel("参数可直接修改，点击保存才生效")
+        self.save_result.setStyleSheet("color: #ffffff;")
+        self.save_result.setWordWrap(True)
         self.save_button = ControlButton("保存设备参数", "primary")
         self.save_button.clicked.connect(self._save_device)
         if getattr(self.controller, "preview_mode", False):
@@ -273,7 +291,7 @@ class DeviceConfigurationPage(QWidget):
             self.save_result.setText("预览模式：设备参数只读，不会写入生产配置。")
         footer.addWidget(self.save_result, 1)
         footer.addWidget(self.save_button)
-        layout.addLayout(footer)
+        editor.addLayout(footer)
         self._reload_devices()
 
     def _reload_devices(self) -> None:
@@ -293,9 +311,6 @@ class DeviceConfigurationPage(QWidget):
         self.fields = {}
         self.flat_fields = {}
         self._sync_edit_controls()
-        for column, title in enumerate(("左侧设备", "右侧设备")):
-            self.device_grid.addWidget(QLabel(title), 0, column)
-            self.device_grid.setColumnStretch(column, 1)
         try:
             devices = list_machine_devices(self.strategy_name)
             for index, (sn, machine_type) in enumerate(devices):
@@ -305,8 +320,7 @@ class DeviceConfigurationPage(QWidget):
                 button.setCheckable(True)
                 button.clicked.connect(lambda checked=False, device_sn=sn: self._select_device(device_sn))
                 self.device_buttons[sn] = button
-                row, column = (sn % 3 + 1, sn // 3) if standard else (index // 2 + 1, index % 2)
-                self.device_grid.addWidget(button, row, column)
+                self.device_grid.addWidget(button, index, 0)
         except Exception as exc:
             self.save_result.setText(f"读取设备列表失败：{exc}")
         if self.device_buttons:
@@ -351,7 +365,8 @@ class DeviceConfigurationPage(QWidget):
         self._config_loaded = bool(self.fields)
         preview = getattr(self.controller, "preview_mode", False)
         self._sync_edit_controls()
-        self.save_result.setText("预览模式：设备参数只读，不会写入生产配置。" if preview else "参数可直接修改，点击保存时验证密码（如已开启）。")
+        self.save_result.setStyleSheet("color: #ffffff;")
+        self.save_result.setText("预览模式：设备参数只读，不会写入生产配置。" if preview else "参数可直接修改，点击保存才生效")
 
     def _sync_edit_controls(self) -> None:
         preview = getattr(self.controller, "preview_mode", False)
@@ -365,21 +380,24 @@ class DeviceConfigurationPage(QWidget):
         form = QGridLayout(content)
         form.setHorizontalSpacing(theme.ui_px(12))
         form.setVerticalSpacing(theme.ui_px(4))
-        rows = (len(order) + 1) // 2
+        rows = len(order)
         for index, (key, label) in enumerate(order):
             field = QLineEdit(str(config.get(key, 100 if key == "x_status_offset" else "")))
             field.setStyleSheet(f"padding: {theme.ui_px(4)}px;")
-            field.setFixedWidth(theme.ui_px(90) * 5)
-            column, row = divmod(index, max(rows, 1))
+            field.setMinimumWidth(0)
+            field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            row = index
             caption = QLabel(label)
             caption.setWordWrap(False)
-            form.addWidget(caption, row, column * 2)
-            form.addWidget(field, row, column * 2 + 1)
-            form.setColumnStretch(column * 2, 1)
+            caption.setMinimumWidth(caption.sizeHint().width())
+            form.addWidget(caption, row, 0)
+            form.addWidget(field, row, 1)
+            form.setColumnStretch(1, 1)
             target[key] = field
         form.setRowStretch(rows, 1)
         scroller = QScrollArea()
         scroller.setWidgetResizable(True)
+        scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroller.setWidget(content)
         self.tabs.addTab(scroller, title)
 

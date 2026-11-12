@@ -20,7 +20,7 @@ class UiTelemetryTests(unittest.TestCase):
                 self.assertIn(mode, servo.detail)
         runtime.strategy_name = "continuous_bidirectional"
         with patch("control.PipelineRuntime.time.monotonic", return_value=101):
-            self.assertEqual("正常", runtime.poll()["devices"][2].detail)
+            self.assertEqual("", runtime.poll()["devices"][2].detail)
         with patch("control.PipelineRuntime.time.monotonic", return_value=110):
             servo = runtime.poll()["devices"][2]
         self.assertFalse(servo.online)

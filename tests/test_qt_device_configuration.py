@@ -10,6 +10,45 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 class DeviceConfigurationTests(unittest.TestCase):
+    def test_selecting_device_restores_white_parameter_hint_after_save(self):
+        from view.qt import theme
+        page = self.make_page()
+        with patch("model.utils.MachineConfiguration.save_machine_config_from_ui"):
+            page._save_device()
+        self.assertIn(theme.GREEN, page.save_result.styleSheet())
+        config = {key: int(field.text()) for key, field in page.fields.items()}
+        config["type"] = "xn_side"
+        with patch("model.utils.MachineConfiguration.load_machine_config_for_ui", return_value=config):
+            page.device_buttons[7].click()
+        self.assertEqual("参数可直接修改，点击保存才生效", page.save_result.text())
+        self.assertIn("#ffffff", page.save_result.styleSheet())
+
+    def test_parameter_inputs_resize_without_horizontal_scroll(self):
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QLabel
+        from view.qt.pages import DeviceConfigurationPage
+        from view.qt.theme import build_industrial_stylesheet
+        page = DeviceConfigurationPage(SimpleNamespace(strategy_name="frame_by_frame"))
+        page.setStyleSheet(build_industrial_stylesheet())
+        self.addCleanup(page.close)
+        widths = []
+        for width in (800, 1200, 1600):
+            page.resize(width, 760)
+            page.show()
+            self.app.processEvents()
+            area = page.tabs.widget(0)
+            self.assertEqual(Qt.ScrollBarPolicy.ScrollBarAlwaysOff, area.horizontalScrollBarPolicy())
+            self.assertEqual(0, area.horizontalScrollBar().maximum())
+            for caption in area.widget().findChildren(QLabel):
+                self.assertFalse(caption.wordWrap())
+                self.assertGreaterEqual(caption.width(), caption.sizeHint().width())
+            for field in page.fields.values():
+                self.assertLessEqual(field.geometry().right(), area.viewport().width())
+            widths.append(next(iter(page.fields.values())).width())
+        self.assertLess(widths[0], widths[1])
+        self.assertLess(widths[1], widths[2])
+        self.assertEqual("参数可直接修改，点击保存才生效", page.save_result.text())
+
     def test_strategy_one_buttons_match_control_names_and_read_machineconfig_one(self):
         from view.qt.pages import DeviceConfigurationPage, DeviceControlPage
         from model.utils.MachineConfiguration import _get_toml_path
@@ -31,7 +70,8 @@ class DeviceConfigurationTests(unittest.TestCase):
                          'out_z_after_offset', 'x_pos_speed', 'y_recip_speed'])
             self.assertEqual(expected, list(page.fields))
             scroller = page.tabs.widget(0)
-            self.assertEqual((len(expected) + 1) // 2 + 1, scroller.widget().layout().rowCount())
+            self.assertEqual(len(expected) + 1, scroller.widget().layout().rowCount())
+            self.assertIs(page.device_grid.itemAtPosition(sn, 0).widget(), page.device_buttons[sn])
             self.assertTrue(scroller.widgetResizable())
             self.assertEqual(1, sum(b.isChecked() for b in page.device_buttons.values()))
             self.assertEqual(f'{name}设备参数', page.parameter_title.text())

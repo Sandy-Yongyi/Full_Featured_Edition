@@ -68,7 +68,7 @@ class DeviceEnableTests(unittest.TestCase):
         page.apply_state(state)
         self.assertTrue(all(not b.isEnabled() for b in page.device_buttons))
         for index, button in enumerate(page.device_buttons):
-            self.assertIs(page.device_grid.itemAtPosition(index % 3 + 3, index // 3).widget(), button)
+            self.assertIs(page.device_grid.itemAtPosition(index % 3 + 2, index // 3).widget(), button)
             button.click()
         self.assertEqual([], sent)
         page.enable_button.click()

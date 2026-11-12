@@ -287,10 +287,10 @@ class PipelineRuntime:
         servo_ready = plc_status is not None and bool(int(plc_status) & 1)
         servo_detail = "伺服状态待反馈" if plc_online else "等待 PLC"
         if plc_status is not None:
-            servo_detail = "正常" if servo_ready else "异常"
+            servo_detail = "" if servo_ready else "异常"
             if self.strategy_name != "continuous_bidirectional":
                 mode = "PC自动模式" if int(plc_status) & 2 else "PLC点动模式"
-                servo_detail += f" · {mode}"
+                servo_detail = f"{servo_detail} · {mode}" if servo_detail else mode
         snapshot["devices"] = (
             DeviceState("PLC", plc_online, plc_detail),
             DeviceState("激光", lidar_online, lidar_detail),

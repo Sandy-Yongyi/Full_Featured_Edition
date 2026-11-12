@@ -2,6 +2,14 @@
 y_threshold = 10                   # 按y间隔排序阈值,间隔10mm为一小块进行排序
 z_threshold = 10                   # 按z间隔排序阈值,单位mm
 
+### 横梁查找参数（按帧内外顶 / 内外底设备）###
+beams_threshold = 0.7              # Y高度在非空帧中的最低出现比例；每帧同一Y只计一次
+merge_beams = 300                  # 相邻候选梁段间距严格小于此值时合并，单位mm
+beams_width = 200                  # 合并后最大梁厚，y_top-y_bottom不超过此值，单位mm
+beams_min_valid_frames = 5         # 搜索窗口至少包含多少个非空帧才进行横梁查找，整数且至少为1
+safety_beam = 80                  # 内外顶喷枪距横梁顶底的安全距离，单位mm
+beam_y_large_move_threshold = 100  # 连续有梁时，Y目标距反馈位置严格超过此值需等待X最小值和Y到位，单位mm
+
 ### 2. 查找分区算法参数 ###
 jig_threshold = 30                 # 挂具距离最上平面y的起始距离
 x_range = 300                      # 判断为柜体的x轴范围,需大于才是柜体,否则为平板

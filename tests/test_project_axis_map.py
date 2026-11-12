@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from typing import cast
 
 from model.motionplan.MachineAxisMap import MACHINE_AXIS_MAP, get_axis_map, get_axis_position_limits
 from model.motionplan.MotionFrameByFramePlanning import MotionFrameByFramePlanning
@@ -26,31 +27,34 @@ class ProjectAxisMapTests(unittest.TestCase):
         cfg["max_limit_pos"] = [500, 700]
         self.assertEqual((0, 500), get_axis_position_limits(cfg, "y2"))
 
-    def test_inout_devices_only_return_safe_and_all_axes_control_master_gate(self):
+    def test_inout_devices_without_beams_return_safe_and_all_axes_control_master_gate(self):
         from control.PlcCommunicationProcess import PlcCommunicationProcess
         config = TomlLoader.load("model/tomls/MachineConfig1.toml")
         feedback = ReceiveMovingFrameData(Status=3)
         for axis in feedback.AxisList:
             axis.Pos = 100
+        for index in (0, 2, 10, 12):
+            feedback.AxisList[index].Pos = -100
         planner = MotionFrameByFramePlanning()
         proc = SimpleNamespace(machine_config=config, num_devices=6, runtime_machine_config={}, device_enable_mask=127, plc_data=feedback, last_operate_state=0,
                                device_returning_to_origin=dict.fromkeys(range(6), False), device_origin_complete={}, frame_queue_manager=SimpleNamespace(frame_stack={}),
                                mode_config={"spray_mode": 0}, lidar_status=0, raw_data_timeout_active=False, strategy_name="frame_by_frame", frame_by_frame_motion_planner=planner)
         frame = planner.build_moving_frame(proc)
         for index in (0, 2, 4, 6, 10, 12, 14, 16):
-            self.assertEqual((100, 0), (frame.AxisList[index].Pos, frame.AxisList[index].Status))
+            expected = -100 if index in (0, 2, 10, 12) else 100
+            self.assertEqual((expected, 0), (frame.AxisList[index].Pos, frame.AxisList[index].Status))
         for index in (1, 3, 5, 7, 11, 13, 15, 17):
             self.assertEqual((0, 0), (frame.AxisList[index].Pos, frame.AxisList[index].Status))
             feedback.AxisList[index].Pos = 0
         proc.device_enable_mask = 1
         frame = planner.build_moving_frame(proc)
         self.assertEqual(127, frame.Operate & 127)
-        self.assertFalse(PlcCommunicationProcess._all_devices_at_safe(proc))
+        self.assertFalse(PlcCommunicationProcess._all_devices_at_safe(cast(PlcCommunicationProcess, proc)))
         for axis in feedback.AxisList:
             axis.Pos = 0
         frame = planner.build_moving_frame(proc)
         self.assertEqual(1, frame.Operate & 127)
-        self.assertTrue(PlcCommunicationProcess._all_devices_at_safe(proc))
+        self.assertTrue(PlcCommunicationProcess._all_devices_at_safe(cast(PlcCommunicationProcess, proc)))
         proc.device_enable_mask = 0
         self.assertEqual(0, planner.build_moving_frame(proc).Operate & 127)
 
