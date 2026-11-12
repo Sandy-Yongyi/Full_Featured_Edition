@@ -61,3 +61,49 @@ class ProjectAxisMapTests(unittest.TestCase):
     def test_old_lidar_axes_are_not_reused_for_spray_axes(self):
         from model.motionplan.MachineAxisMap import LIDAR_AXIS_MAP
         self.assertEqual({}, LIDAR_AXIS_MAP)
+
+    def test_inout_up_final_axis_output_enforces_relative_y_order_on_both_sides(self):
+        from model.motionplan.MachineAxisMap import apply_to_axis_list
+        from model.plc.MovingFrameData import AxisData, create_axis_list
+
+        for side, indices in (("left", (0, 2)), ("right", (10, 12))):
+            with self.subTest(side=side):
+                config = dict(type="inout_up", install_orietation=side, min_limit_pos=[-1600, 0], max_limit_pos=[0, 1200], max_limit_speed=[500, 500])
+                commands = {"y1": AxisData(Pos=-1000, Speed=300), "y2": AxisData(Pos=-1200, Speed=300)}
+                axes = create_axis_list()
+                apply_to_axis_list(commands, config, axes)
+                self.assertEqual((-1000, -1000), (axes[indices[0]].Pos, axes[indices[1]].Pos))
+                self.assertEqual(-1200, commands["y2"].Pos)
+
+    def test_inout_up_conflicting_y2_limit_is_rejected_without_partial_axis_write(self):
+        from model.motionplan.MachineAxisMap import apply_to_axis_list
+        from model.plc.MovingFrameData import AxisData, create_axis_list
+
+        config = dict(type="inout_up", install_orietation="left", min_limit_pos=[-1600, 0, -1600, 0], max_limit_pos=[0, 1200, -1100, 1200])
+        commands = {"y1": AxisData(Pos=-1000, Speed=300), "y2": AxisData(Pos=-1200, Speed=300)}
+        axes = create_axis_list()
+        with self.assertRaises(ValueError):
+            apply_to_axis_list(commands, config, axes)
+        self.assertTrue(all(axis.Pos == 0 and axis.Speed == 0 and axis.Status == 0 for axis in axes))
+
+    def test_inout_down_final_axis_output_preserves_positive_relative_y_order(self):
+        from model.motionplan.MachineAxisMap import apply_to_axis_list
+        from model.plc.MovingFrameData import AxisData, create_axis_list
+
+        for side, indices in (("left", (4, 6)), ("right", (14, 16))):
+            config = dict(type="inout_down", install_orietation=side, min_limit_pos=[0, 0], max_limit_pos=[1600, 1200], max_limit_speed=[500, 500])
+            commands = {"y1": AxisData(Pos=1000, Speed=300), "y2": AxisData(Pos=800, Speed=300)}
+            axes = create_axis_list()
+            apply_to_axis_list(commands, config, axes)
+            self.assertEqual((800, 800), (axes[indices[0]].Pos, axes[indices[1]].Pos))
+
+    def test_inout_down_y1_lower_limit_cannot_be_bypassed_to_match_y2(self):
+        from model.motionplan.MachineAxisMap import apply_to_axis_list
+        from model.plc.MovingFrameData import AxisData, create_axis_list
+
+        config = dict(type="inout_down", install_orietation="left", min_limit_pos=[900, 0, 0, 0], max_limit_pos=[1600, 1200, 1600, 1200])
+        commands = {"y1": AxisData(Pos=1000, Speed=300), "y2": AxisData(Pos=800, Speed=300)}
+        axes = create_axis_list()
+        with self.assertRaises(ValueError):
+            apply_to_axis_list(commands, config, axes)
+        self.assertTrue(all(axis.Speed == 0 and axis.Status == 0 for axis in axes))

@@ -23,7 +23,7 @@ class MotionFrameByFramePlanning:
         self.manual_out_fx_planner = MotionManualOutFxPlanning()
         self.motion_to_target = MotionToTarget()
         self.inout_up_planner = MotionInOutUpPlanning(motion_to_target=self.motion_to_target)
-        self.inout_down_planner = MotionInOutDownPlanning(self.inout_up_planner.beam_detector, self.motion_to_target)
+        self.inout_down_planner = MotionInOutDownPlanning(motion_to_target=self.motion_to_target)
         self.out_2d_servo_planner = MotionOut2DServoFramePlanning(self.motion_to_target)
         self.xy_servo_planner = Motion2DXYServoFramePlanning(motion_to_target=self.motion_to_target)
         self.out_lift_planner = MotionOutLiftFramePlanning()
@@ -52,9 +52,11 @@ class MotionFrameByFramePlanning:
 
         if clean_mode_enabled:
             self.inout_up_planner.reset_motion_state()
+            self.inout_down_planner.reset_motion_state()
             enable_value = self._build_clean_mode_enable_and_axes(proc, clean_mode_ready, axis_list)
         elif self._is_manual_mode_enabled(proc) and not force_disable_all:
             self.inout_up_planner.reset_motion_state()
+            self.inout_down_planner.reset_motion_state()
             enable_value = self._build_manual_mode_enable_and_axes(proc, axis_list)
         else:
             enable_value, auto_stop_chain = self._build_auto_mode_enable_and_axes(
@@ -124,6 +126,8 @@ class MotionFrameByFramePlanning:
         """为关闭或正在安全返回的设备生成命令。"""
         if machine_type == "inout_up":
             self.inout_up_planner.reset_motion_state(sn)
+        elif machine_type == "inout_down":
+            self.inout_down_planner.reset_motion_state(sn)
         if machine_type == "xn_updown4":
             self.xn_updown4_planner.reset_motion_state(sn)
 
@@ -158,9 +162,7 @@ class MotionFrameByFramePlanning:
             axis_cmds = self.inout_up_planner.auto_inout_up_move(machine_cfg, runtime_cfg, proc.plc_data, proc.frame_queue_manager)
             device_stop_chain = False
         elif machine_type == "inout_down":
-            axis_cmds, all_ready = self.inout_down_planner.auto_inout_down_move(machine_cfg, runtime_cfg, proc.plc_data, proc.frame_queue_manager)
-            proc.device_returning_to_origin[sn] = not all_ready
-            proc.device_origin_complete[sn] = all_ready
+            axis_cmds = self.inout_down_planner.auto_inout_down_move(machine_cfg, runtime_cfg, proc.plc_data, proc.frame_queue_manager)
             device_stop_chain = False
         elif machine_type == "xn_updown2":
             axis_cmds = self.xn_updown2_planner.auto_xn_updown2_move(machine_cfg, runtime_cfg, proc.plc_data, proc.frame_queue_manager)

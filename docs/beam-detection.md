@@ -54,10 +54,10 @@ result = detector.find_for_side(side, z_position, search_front_z_offset, search_
 
 ## 当前接入范围
 
-`MotionFrameByFramePlanning` 只分发已开启设备，不直接调用检测器，也不存储横梁结果。内外顶由 MotionInOutUpPlanning 显式传入方向、Z 定位和搜索偏移，检测结果是设备规划内部的局部变量，对外只返回轴命令。内外底由 MotionInOutDownPlanning 内部调用检测器，对外只返回轴命令及安全回位完成状态。当前不提供横梁结果查询接口。
+`MotionFrameByFramePlanning` 只分发已开启设备，不直接调用检测器，也不存储横梁结果。MotionInOutUpPlanning / MotionInOutDownPlanning 分别通过公用 InOutFramePlanningBase 显式传入方向、Z 定位和搜索偏移，检测结果是设备规划内部的局部变量，对外只返回轴命令。当前不提供横梁结果查询接口。
 
-内外顶已接入独立路径规划，规则见 docs/inout-up-planning.md；内外底当前仍仅检测和安全回位。检测器本身仍不计算运动、不控制开枪。完整工件及其他设备规划不接入此功能。
+内外顶/底均已接入独立路径规划，规则分别见 docs/inout-up-planning.md 和 docs/inout-down-planning.md。检测器本身仍不计算运动、不控制开枪。完整工件及其他设备规划不接入此功能。
 
 ## 验证
 
-`tests/test_beam_detector.py` 验证 4/5 帧边界、可配置门槛、空帧分母、每帧去重、中心分类、合并与厚度边界、独立步距、窗口边界、左右隔离及无结果锁存。集成测试验证四台内外顶底设备返回对应横梁、内外底仍安全回位，以及设备关闭后不调用内外顶自动规划器。
+`tests/test_beam_detector.py` 验证 4/5 帧边界、可配置门槛、空帧分母、每帧去重、中心分类、合并与厚度边界、独立步距、窗口边界、左右隔离及无结果锁存。集成测试验证由各设备规划消费横梁结果、不可达下梁关粉，以及设备关闭后不调用顶/底自动规划器。

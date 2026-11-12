@@ -139,11 +139,45 @@ def _limit_axis_command(machine_cfg: dict, axis_name: str, axis_data: AxisData) 
     return AxisData(Pos=clamp_to_limit_yx(int(axis_data.Pos), min_position, max_position), Speed=clamp_speed(int(axis_data.Speed), max_speed), Status=status)
 
 
+def limit_inout_y_targets(machine_cfg: dict, y1_target: int, y2_target: int) -> tuple[int, int]:
+    """相对位置越界：内外顶改 Y2 等于 Y1，内外底改 Y1 等于 Y2。"""
+    y1_min, y1_max = get_axis_position_limits(machine_cfg, "y1")
+    y2_min, y2_max = get_axis_position_limits(machine_cfg, "y2")
+    y1_min, y1_max = max(INT16_MIN, y1_min), min(INT16_MAX, y1_max)
+    y2_min, y2_max = max(INT16_MIN, y2_min), min(INT16_MAX, y2_max)
+    if y1_min > y1_max or y2_min > y2_max:
+        raise ValueError("内外顶底 Y 轴限位无效")
+    y1_limited = clamp_to_limit_yx(int(y1_target), y1_min, y1_max)
+    y2_limited = clamp_to_limit_yx(int(y2_target), y2_min, y2_max)
+    if machine_cfg.get("type") == "inout_down":
+        y1_limited = min(y1_limited, y2_limited)
+        if y1_limited < y1_min:
+            raise ValueError("Y1 下限无法满足 Y1 <= Y2，禁止发送冲突轨迹")
+    else:
+        y2_limited = max(y1_limited, y2_limited)
+        if y2_limited > y2_max:
+            raise ValueError("Y2 上限无法满足 Y2 >= Y1，禁止发送冲突轨迹")
+    return y1_limited, y2_limited
+
+
+def enforce_inout_y_order(machine_cfg: dict, axis_cmds: dict) -> dict:
+    """在设备命令写入报文前检查；复制 Y 指令，避免修改调用方持有的轴对象。"""
+    if machine_cfg.get("type") not in ("inout_up", "inout_down") or "y1" not in axis_cmds or "y2" not in axis_cmds:
+        return axis_cmds
+    commands = dict(axis_cmds)
+    y1 = _limit_axis_command(machine_cfg, "y1", axis_cmds["y1"])
+    y2 = _limit_axis_command(machine_cfg, "y2", axis_cmds["y2"])
+    y1.Pos, y2.Pos = limit_inout_y_targets(machine_cfg, y1.Pos, y2.Pos)
+    commands.update(y1=y1, y2=y2)
+    return commands
+
+
 def apply_to_axis_list(machine_data: dict, machine_cfg: dict, axis_list: list):
     """将设备运动指令字典应用到 PLC AxisList 中。"""
     machine_type = machine_cfg.get("type", "")
     orientation = machine_cfg.get("install_orietation", "left")
     axis_map = get_axis_map(machine_type, orientation)
+    machine_data = enforce_inout_y_order(machine_cfg, machine_data)
     for axis_name, axis_data in machine_data.items():
         if axis_name in axis_map:
             idx = axis_map[axis_name]

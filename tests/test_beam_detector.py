@@ -114,7 +114,7 @@ class BeamDetectorTests(unittest.TestCase):
 
 
 class BeamDetectionIntegrationTests(unittest.TestCase):
-    def test_inout_devices_delegate_detection_and_down_devices_still_return_safe(self):
+    def test_inout_devices_delegate_detection_and_unreachable_down_beam_keeps_powder_off(self):
         from model.motionplan.MotionFrameByFramePlanning import MotionFrameByFramePlanning
         from model.plc.MovingFrameData import ReceiveMovingFrameData
         from model.utils.TomlLoader import TomlLoader
@@ -131,9 +131,11 @@ class BeamDetectionIntegrationTests(unittest.TestCase):
         down_indices = (*range(4, 8), *range(14, 18))
         self.assertTrue(all(moving.AxisList[index].Pos == 0 and moving.AxisList[index].Status == 0 for index in down_indices))
         proc.device_enable_mask = 1
-        with patch.object(planner.inout_up_planner, "auto_inout_up_move", wraps=planner.inout_up_planner.auto_inout_up_move) as top_move:
+        with (patch.object(planner.inout_up_planner, "auto_inout_up_move", wraps=planner.inout_up_planner.auto_inout_up_move) as top_move,
+              patch.object(planner.inout_down_planner, "auto_inout_down_move", wraps=planner.inout_down_planner.auto_inout_down_move) as bottom_move):
             disabled_frame = planner.build_moving_frame(proc)
             top_move.assert_not_called()
+            bottom_move.assert_not_called()
         self.assertTrue(all(axis.Status == 0 for axis in disabled_frame.AxisList))
 
 

@@ -80,7 +80,7 @@ install_orietation = "left"
 max_limit_speed = [500, 500]                 # Y, X
 min_limit_pos = [0, 0]                       # Y, X
 max_limit_pos = [1000, 1000]                 # Y, X
-origin_pos = [1300]
+origin_pos = [1300, 1600]                    # Y1, Y2
 safe_pos = [0, 0]                            # Y, X
 
 [2]
@@ -207,8 +207,8 @@ top_chain_hold_enabled = false
 install_orietation = "right"
 max_limit_speed = [500, 500]                 # Y, X
 min_limit_pos = [0, 0]                       # Y, X
-max_limit_pos = [1000, 1000]                 # Y, X
-origin_pos = [1300]
+max_limit_pos = [1600, 1200]                 # Y, X
+origin_pos = [1300, 1600]                    # Y1, Y2
 safe_pos = [0, 0]                            # Y, X
 
 [5]

@@ -61,6 +61,8 @@ strategy_name = 1
 
 TOML 中填写整数 `1/2/3`，内部模块之间使用策略名称字符串。更详细的开发入口和 TXT 规则见 [开发运行方式](docs/qt-developer-modes.md)。
 
+策略 1 的内外顶/底分别由 `MotionInOutUpPlanning`、`MotionInOutDownPlanning` 规划，上下梁识别仍由独立数据处理功能块完成；两类设备共用 `motionutil/InOutFramePlanningBase` 的等待和往复状态机。详细规则见 [横梁检测](docs/beam-detection.md)、[内外顶规划](docs/inout-up-planning.md)、[内外底规划](docs/inout-down-planning.md)。
+
 ## 当前界面
 
 左侧保留“实时控制、设备控制、设备配置”三个页面。现有页面每秒接收一次状态更新，切页不暂停点云预览数据处理；PLC 收发和激光采集周期由工作进程管理，不随界面刷新改成一秒一次。
