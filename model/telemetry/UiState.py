@@ -62,6 +62,8 @@ class UiState:
     chain_speed: int = 25
     chain_speed_mm_s: float | None = None
     device_enable_mask: int = 0
+    pc_auto_mode: bool | None = None
+    all_devices_safe: bool = False
     chain_status: str = "待机"
     points: Any | None = None
     boxes: Any | None = None

@@ -12,6 +12,7 @@ from queue import Empty, SimpleQueue
 from typing import Any, Protocol
 
 from model.telemetry.UiState import LogEvent, UiState, TaskState
+from model.motionplan.motionutil.DeviceEnableHelper import validate_enable_transition
 from model.runtime.ShutdownCoordinator import ShutdownCoordinator
 
 
@@ -133,7 +134,8 @@ class ControlCenter:
         if self.stopping:
             return
         data = self._runtime.poll() or {}
-        allowed = {"chain_position", "chain_status", "chain_speed", "chain_speed_mm_s", "device_enable_mask", "points", "boxes", "devices", "task", "alarms"}
+        allowed = {"chain_position", "chain_status", "chain_speed", "chain_speed_mm_s", "device_enable_mask", "pc_auto_mode", "all_devices_safe",
+                   "points", "boxes", "devices", "task", "alarms"}
         changes = {key: value for key, value in data.items() if key in allowed}
         if "updated" in data:
             if not data["updated"]:
@@ -179,6 +181,7 @@ class ControlCenter:
         if self._send_control is None:
             raise RuntimeError("设备控制未接入")
         mask = mask if mask & 1 else 0
+        validate_enable_transition(self._state.device_enable_mask, mask, self._state.pc_auto_mode, self._state.all_devices_safe)
         self._send_control({"device_enable_mask": mask})
         self._state = self._replace_state(device_enable_mask=mask)
 

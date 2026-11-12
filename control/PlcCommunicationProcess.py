@@ -15,6 +15,7 @@ from model.formats.complete_workpiece.BlockDataFormat import BlockData
 from model.formats.frame_by_frame.AxisFrameDataFormat import AxisFrameData
 from model.dataprocess.complete_workpiece.GunDistributor import GunDistributor
 from model.motionplan.MotionFrameByFramePlanning import MotionFrameByFramePlanning
+from model.motionplan.motionutil.DeviceEnableHelper import validate_enable_transition
 from model.utils.StrategyUtil import is_complete_workpiece_mode, is_continuous_bidirectional_mode, validate_strategy_name
 from model.utils.MachineConfigUtil import MACHINE_OFFSET_KEYS, get_machine_config_path, normalize_machine_config_offsets, normalize_machine_offset_values
 from model.motionplan.MotionCompleteWorkpiecePlanning import MotionCompleteWorkpiecePlanning
@@ -454,7 +455,11 @@ class PlcCommunicationProcess(multiprocessing.Process):
             task=task,
             pulse=int(getattr(data, "ChainPulse", 0) or 0),
             chain_speed_mm_s=float(getattr(data, "ChainSpeed", 0) or 0),
+            plc_status=int(data.Status) if data is not None and hasattr(data, "Status") else None,
+            all_devices_safe=PlcCommunicationProcess._all_devices_at_safe(self) if connected else False,
             device_enable_mask=int(getattr(self, "device_enable_mask", 0)),
+            device_enable_request_id=getattr(self, "_enable_request_id", None),
+            device_enable_error=getattr(self, "_enable_error", ""),
             motion=(getattr(self.continuous_scan, "motion_status", "stopped")
                     if is_continuous_bidirectional_mode(self.strategy_name) and hasattr(self, "continuous_scan")
                     else self.chain_motion_status),
@@ -897,7 +902,18 @@ class PlcCommunicationProcess(multiprocessing.Process):
                 if "device_enable_mask" in msg:
                     mask = msg["device_enable_mask"]
                     if type(mask) is int and 0 <= mask <= 127:
-                        self.device_enable_mask = mask if mask & 1 else 0
+                        self._enable_request_id = msg.get("device_enable_request_id")
+                        target = mask if mask & 1 else 0
+                        pc_auto = bool(int(self.plc_data.Status) & 2) if getattr(self, "plc_data", None) is not None else None
+                        try:
+                            validate_enable_transition(getattr(self, "device_enable_mask", 0), target, pc_auto, self._all_devices_at_safe())
+                        except ValueError as exc:
+                            self._enable_error = str(exc)
+                            logger.warning(f"Device enable command rejected: {exc}")
+                            self._publish_ui_status(connected=True, force=True)
+                            continue
+                        self.device_enable_mask = target
+                        self._enable_error = ""
                     else:
                         logger.warning("Invalid device enable mask")
                     continue
@@ -972,6 +988,18 @@ class PlcCommunicationProcess(multiprocessing.Process):
         if is_complete_workpiece_mode(self.strategy_name):
             return self.complete_workpiece_planner.build_moving_frame(self)
         return self.frame_by_frame_motion_planner.build_moving_frame(self)
+
+    def _all_devices_at_safe(self) -> bool:
+        planner = (getattr(self, "continuous_bidirectional_planner", None) if getattr(self, "strategy_name", "") == "continuous_bidirectional" else
+                   getattr(self, "complete_workpiece_planner", None) if getattr(self, "strategy_name", "") == "complete_workpiece" else
+                   getattr(self, "frame_by_frame_motion_planner", None))
+        target = getattr(planner, "motion_to_target", None)
+        if target is None or not getattr(self, "machine_config", {}):
+            return False
+        try:
+            return all(target._check_device_axes_arrived(config, self.plc_data) for config in self.machine_config.values())
+        except (KeyError, ValueError, TypeError, AttributeError, IndexError):
+            return False
 
     def after_spray_complete(self, direction: str, sn: int):
         """喷涂完成后删除当前工件，并同步维护 complete_workpiece 的位置跟踪标记。"""

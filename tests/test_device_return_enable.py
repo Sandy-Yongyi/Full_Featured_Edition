@@ -11,8 +11,8 @@ class ReturnEnableTests(unittest.TestCase):
         cfg = dict(sn=2, type="H2D_XYservo", install_orietation="left", axis_type=["y", "x"], safe_pos=[0, 0], min_limit_pos=[0, 0], max_limit_pos=[600, 750],
                    max_limit_speed=[300, 500], x_pos_speed=200, y_pos_speed=200, x_position=0, origin_pos=[0], spray_num=3, spray_radius=500, z_position=2000)
         feedback = ReceiveMovingFrameData(Status=1, Operate=127)
-        feedback.AxisList[2].Pos = 100
-        feedback.AxisList[3].Pos = 100
+        feedback.AxisList[8].Pos = 100
+        feedback.AxisList[9].Pos = 100
         queues = SimpleNamespace(frame_stack={"left": []}, queues={"left": {2: []}})
         return SimpleNamespace(machine_config={"2": cfg}, runtime_machine_config={}, num_devices=3, device_enable_mask=9, plc_data=feedback, last_operate_state=0,
                                device_returning_to_origin={2: False}, device_origin_complete={2: False}, frame_queue_manager=queues, mode_config={"spray_mode": 0},
@@ -29,11 +29,11 @@ class ReturnEnableTests(unittest.TestCase):
                     proc.device_enable_mask = closed_mask
                     returning = planner.build_moving_frame(proc)
                     self.assertEqual(9, returning.Operate & 0x7F)
-                    self.assertEqual(0, returning.AxisList[3].Status)
-                    proc.plc_data.AxisList[3].Pos = 0
+                    self.assertEqual(0, returning.AxisList[9].Status)
+                    proc.plc_data.AxisList[9].Pos = 0
                     only_x_ready = planner.build_moving_frame(proc)
                     self.assertEqual(9, only_x_ready.Operate & 0x7F)
-                    proc.plc_data.AxisList[2].Pos = 0
+                    proc.plc_data.AxisList[8].Pos = 0
                     complete = planner.build_moving_frame(proc)
                     self.assertEqual(closed_mask, complete.Operate & 0x7F)
                     self.assertFalse(proc.device_returning_to_origin[2])
@@ -45,7 +45,7 @@ class ReturnEnableTests(unittest.TestCase):
             proc.device_enable_mask = 0
             frame = planner_type().build_moving_frame(proc)
             self.assertEqual(0, frame.Operate)
-            self.assertEqual(0, frame.AxisList[3].Status)
+            self.assertEqual(0, frame.AxisList[9].Status)
 
     def test_reopen_during_return_finishes_return_before_resuming(self):
         proc = self.make_proc()
@@ -55,7 +55,7 @@ class ReturnEnableTests(unittest.TestCase):
         planner.build_moving_frame(proc)
         proc.device_enable_mask = 9
         frame = planner.build_moving_frame(proc)
-        self.assertEqual(0, frame.AxisList[3].Status)
+        self.assertEqual(0, frame.AxisList[9].Status)
         self.assertTrue(proc.device_returning_to_origin[2])
         self.assertEqual(9, frame.Operate)
 

@@ -5,6 +5,27 @@ from unittest.mock import Mock, patch
 
 
 class UiTelemetryTests(unittest.TestCase):
+    def test_servo_and_mode_decode_independent_bits_and_expire(self):
+        from control.PipelineRuntime import PipelineRuntime
+        runtime = PipelineRuntime()
+        runtime.strategy_name = "frame_by_frame"
+        runtime.ui_status_queue = queue.Queue()
+        runtime.plc_handler = SimpleNamespace(is_alive=lambda: True)
+        for status, healthy, mode in ((0, False, "PLC点动模式"), (1, True, "PLC点动模式"), (2, False, "PC自动模式"), (3, True, "PC自动模式")):
+            with self.subTest(status=status):
+                runtime.ui_status_queue.put({"source": "plc", "timestamp": 100, "connected": True, "plc_status": status})
+                with patch("control.PipelineRuntime.time.monotonic", return_value=101):
+                    servo = runtime.poll()["devices"][2]
+                self.assertEqual(healthy, servo.online)
+                self.assertIn(mode, servo.detail)
+        runtime.strategy_name = "continuous_bidirectional"
+        with patch("control.PipelineRuntime.time.monotonic", return_value=101):
+            self.assertEqual("正常", runtime.poll()["devices"][2].detail)
+        with patch("control.PipelineRuntime.time.monotonic", return_value=110):
+            servo = runtime.poll()["devices"][2]
+        self.assertFalse(servo.online)
+        self.assertEqual("等待 PLC", servo.detail)
+
     def test_publisher_throttles_and_never_waits_for_a_full_queue(self):
         from model.utils.UiTelemetry import UiStatusPublisher
         output = queue.Queue(maxsize=1)
@@ -47,13 +68,14 @@ class UiTelemetryTests(unittest.TestCase):
         output = queue.Queue()
         process = PlcCommunicationProcess(queue.Queue(), queue.Queue(), queue.Queue())
         process.ui_status = UiStatusPublisher(output, "plc")
-        process.plc = SimpleNamespace(scan=lambda _: SimpleNamespace(ChainPulse=18229, AxisList=[]))
+        process.plc = SimpleNamespace(scan=lambda _: SimpleNamespace(ChainPulse=18229, Status=3, AxisList=[]))
         process.connection_type = 1
         process._update_chain_status = Mock()
         self.assertTrue(process._update_plc_data())
         message = output.get_nowait()
         self.assertTrue(message["connected"])
         self.assertEqual(18229, message["pulse"])
+        self.assertEqual(3, message["plc_status"])
 
     def test_lidar_feedback_distinguishes_healthy_and_failed_scan(self):
         from model.lidar.LidarAcquisitionProcess import LidarAcquisitionProcess

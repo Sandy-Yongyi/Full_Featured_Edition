@@ -3,6 +3,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QScrollArea, QTabWidget, QVBoxLayout, QWidget
 
 from model.telemetry.UiState import UiState
+from model.motionplan.motionutil.DeviceEnableHelper import validate_enable_transition
 from view.qt.point_cloud_view import QtPointCloudView
 from view.qt import theme
 from view.qt.widgets import ControlButton, Panel, StatusBadge, RuntimeLogView
@@ -150,6 +151,8 @@ class DeviceControlPage(QWidget):
         self.controller = controller
         self._available = False
         self._last_mask = None
+        self._pc_auto_mode = None
+        self._all_safe = False
         layout = QVBoxLayout(self)
         panel = Panel("设备控制")
         self.enable_button = ControlButton("设备总使能")
@@ -159,10 +162,14 @@ class DeviceControlPage(QWidget):
         self.device_grid.setHorizontalSpacing(theme.ui_px(20))
         self.device_grid.setVerticalSpacing(theme.ui_px(10))
         self.device_grid.addWidget(self.enable_button, 0, 0)
+        self.enable_hint = QLabel("等待 PLC 通讯")
+        self.enable_hint.setWordWrap(True)
+        self.enable_hint.setStyleSheet("color: #ffffff;")
+        self.device_grid.addWidget(self.enable_hint, 1, 0, 1, 2)
         for column, title in enumerate(("左侧设备", "右侧设备")):
             label = QLabel(title)
             label.setStyleSheet(f"font-weight: 700; color: {theme.CYAN};")
-            self.device_grid.addWidget(label, 1, column)
+            self.device_grid.addWidget(label, 2, column)
             self.device_grid.setColumnStretch(column, 1)
         self.device_buttons = []
         for index, name in enumerate(self.DEVICE_NAMES):
@@ -170,28 +177,33 @@ class DeviceControlPage(QWidget):
             button.setCheckable(True)
             button.clicked.connect(self._send)
             self.device_buttons.append(button)
-            self.device_grid.addWidget(button, index % 3 + 2, index // 3)
+            self.device_grid.addWidget(button, index % 3 + 3, index // 3)
         panel.content_layout.addLayout(self.device_grid)
-        self.result = QLabel("等待 PLC 通讯")
-        self.result.setWordWrap(True)
-        panel.content_layout.addWidget(self.result)
         layout.addWidget(panel)
         layout.addStretch(1)
         self._sync()
 
     def _sync(self):
-        signature = (self._available, self.enable_button.isChecked(), tuple(b.isChecked() for b in self.device_buttons))
+        signature = (self._available, self._pc_auto_mode, self._all_safe, self.enable_button.isChecked(), tuple(b.isChecked() for b in self.device_buttons))
         if signature == getattr(self, "_last_sync_signature", None):
             return
         enabled = self.enable_button.isChecked()
-        self.enable_button.setEnabled(self._available)
+        can_close = self._all_safe and not any(b.isChecked() for b in self.device_buttons)
+        self.enable_button.setEnabled(self._available and (can_close if enabled else self._pc_auto_mode is True))
+        hint = "等待 PLC 通讯" if not self._available else "等待PC自动模式反馈，无法使能"
+        if self._available:
+            if enabled:
+                hint = "设备已全部关闭并安全回位，可关闭使能" if can_close else "设备未全部关闭并安全回位，无法关闭使能"
+            elif self._pc_auto_mode is not None:
+                hint = "PC自动模式可开启使能" if self._pc_auto_mode else "PLC点动模式无法使能"
+        self.enable_hint.setText(hint)
         for button in self.device_buttons:
             if not enabled:
                 button.setChecked(False)
             button.setEnabled(self._available and enabled)
         for button in (self.enable_button, *self.device_buttons):
             button.setStyleSheet(f"background: #12613f; border-color: {theme.GREEN}; color: #ffffff;" if button.isChecked() else "")
-        self._last_sync_signature = (self._available, self.enable_button.isChecked(), tuple(b.isChecked() for b in self.device_buttons))
+        self._last_sync_signature = (self._available, self._pc_auto_mode, self._all_safe, self.enable_button.isChecked(), tuple(b.isChecked() for b in self.device_buttons))
 
     def _send(self):
         try:
@@ -200,16 +212,16 @@ class DeviceControlPage(QWidget):
             if not authorize(self, self.controller):
                 self._set_mask(self._last_mask or 0)
                 return
-            self._sync()
             mask = 0
             if self.enable_button.isChecked():
                 mask = 1 | sum(1 << i for i, b in enumerate(self.device_buttons, 1) if b.isChecked())
+            validate_enable_transition(self._last_mask or 0, mask, self._pc_auto_mode, self._all_safe)
             self.controller.set_device_enable_mask(mask)
             self._last_mask = mask
-            self.result.setText("开关请求已提交；已关闭的设备回到安全位置后才撤销报文使能。")
+            self._sync()
         except Exception as exc:
             self._set_mask(self._last_mask or 0)
-            self.result.setText(f"控制失败：{exc}")
+            self.enable_hint.setText(str(exc))
 
     def _set_mask(self, mask):
         self.enable_button.setChecked(bool(mask & 1))
@@ -218,6 +230,8 @@ class DeviceControlPage(QWidget):
         self._sync()
 
     def apply_state(self, state):
+        self._pc_auto_mode = state.pc_auto_mode
+        self._all_safe = state.all_devices_safe
         self._available = state.running and not state.stopping and any(d.name == "PLC" and d.online for d in state.devices)
         mask = state.device_enable_mask if self._available else 0
         if mask != self._last_mask or not self._available:

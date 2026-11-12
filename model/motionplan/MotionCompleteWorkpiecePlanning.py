@@ -28,8 +28,8 @@ class MotionCompleteWorkpiecePlanning:
 
         逻辑流程：
         1. 当 Operate 的 bit0（使能位）为 0 时，所有设备都需要回原点
-        2. 当使能打开时，需要判断 Status 是否为 1（伺服正常）
-           - 如果伺服报警（Status != 1），所有设备回原点
+        2. 当使能打开时，检查 Status 的 bit0（伺服正常）
+           - 如果伺服报警（bit0=0），所有设备回原点
            - 如果伺服正常，根据 Operate 的各设备位来控制设备运动
         3. 根据设备的回原点状态设置 Operate 的对应位：
            - 如果设备全部轴回0，对应位发 0
@@ -48,7 +48,7 @@ class MotionCompleteWorkpiecePlanning:
         plc_enable = (requested_operate(proc) & 0x01) == 1
         axis_list = create_axis_list()
         # 检查伺服状态
-        servo_alarm = proc.plc_data.Status != 1
+        servo_alarm = not bool(int(proc.plc_data.Status) & 1)
         operate_u16 = requested_operate(proc) & 0xFFFF
         logger.debug(f"plc_enable={plc_enable}, servo_alarm={servo_alarm}, Operate={operate_u16}, {operate_u16:016b}")
         lidar_abnormal = int(getattr(proc, "lidar_status", 0) or 0) in (1, 2, 3)
@@ -128,7 +128,7 @@ class MotionCompleteWorkpiecePlanning:
 
                 # 更新设备回原点状态
                 proc.device_origin_complete[sn] = all_ready
-                if should_return_safe and not all_ready:
+                if device_operate_enabled or (should_return_safe and not all_ready):
                     enable_value |= 1 << device_bit
 
             # 设备运动已开启 → 执行自动运动逻辑

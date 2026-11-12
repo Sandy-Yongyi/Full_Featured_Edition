@@ -114,6 +114,9 @@ class ContinuousLidarScan:
 
     def _validate_and_prepare_frame(self, frame, feedback):
         """Validate feedback length and prepare frame axis list."""
+        if not LIDAR_AXIS_MAP:
+            self._fault("No PLC lidar motion axes are configured for this project.")
+            return False
         if len(feedback.AxisList) != len(frame.AxisList):
             self._fault("PLC axis count does not match the frame definition.")
             return False

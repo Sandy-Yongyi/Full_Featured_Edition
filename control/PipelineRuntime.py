@@ -81,6 +81,7 @@ class PipelineRuntime:
         self.file_loader = None
         self.running = False
         self._requested_device_enable_mask = 0
+        self._enable_request_id = 0
         self._faults: list[str] = []
         self.filter = DataFilter()
         self.collector = RuntimeStateCollector(self.log_queue, self.filter, float(self.read_data_config.get("point_cloud_preview_voxel_mm", 10)))
@@ -232,6 +233,8 @@ class PipelineRuntime:
                 break
             if isinstance(message, dict) and message.get("source") in {"plc", "lidar", "files"}:
                 self._ui_feedback[message["source"]] = message
+                if message.get("device_enable_error") and message.get("device_enable_request_id") == self._enable_request_id:
+                    self._requested_device_enable_mask = int(message.get("device_enable_mask", 0))
         fault = self.health_monitor.check(self.processes, self.process_heartbeats, self.save_service, now=time.monotonic()) if self.running else None
         if fault is not None:
             if not self._faults or self._faults[-1] != fault.detail:
@@ -278,10 +281,20 @@ class PipelineRuntime:
             if self.running:
                 motion = plc_feedback.get("motion", "stopped")
                 snapshot["chain_status"] = {"moving_forward": "链条前进", "moving_reverse": "链条后退", "stopped": "链条停止"}.get(motion, "运行中")
+        plc_status = plc_feedback.get("plc_status") if plc_online else None
+        snapshot["pc_auto_mode"] = bool(int(plc_status) & 2) if plc_status is not None else None
+        snapshot["all_devices_safe"] = bool(plc_online and plc_feedback.get("all_devices_safe", False))
+        servo_ready = plc_status is not None and bool(int(plc_status) & 1)
+        servo_detail = "伺服状态待反馈" if plc_online else "等待 PLC"
+        if plc_status is not None:
+            servo_detail = "正常" if servo_ready else "异常"
+            if self.strategy_name != "continuous_bidirectional":
+                mode = "PC自动模式" if int(plc_status) & 2 else "PLC点动模式"
+                servo_detail += f" · {mode}"
         snapshot["devices"] = (
             DeviceState("PLC", plc_online, plc_detail),
             DeviceState("激光", lidar_online, lidar_detail),
-            DeviceState("伺服", False, "就绪状态待确认" if plc_online else "等待 PLC"),
+            DeviceState("伺服", servo_ready, servo_detail),
         )
         snapshot["alarms"] = tuple(self._faults[-10:])
         return snapshot
@@ -296,6 +309,9 @@ class PipelineRuntime:
     def send_control(self, command: dict[str, int]) -> None:
         if self.control_type == 3:
             raise RuntimeError("文件查看模式不能发送设备命令")
+        if "device_enable_mask" in command:
+            self._enable_request_id += 1
+            command = {**command, "device_enable_request_id": self._enable_request_id}
         self.control_queue.put(command)
         if "device_enable_mask" in command:
             mask = int(command["device_enable_mask"]) & 0x7F

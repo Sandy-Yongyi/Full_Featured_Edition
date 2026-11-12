@@ -45,17 +45,17 @@ class XYServoTests(unittest.TestCase):
         self.assertEqual((500, 200, 450, 400), (commands["y"].Pos, commands["y"].Speed, commands["x"].Pos, commands["x"].Speed))
         self.assertEqual(2, mask)
         self.assertEqual(2, commands["x"].Status)
-        self.plc.AxisList[2].Pos = 500
+        self.plc.AxisList[8].Pos = 500
         commands, _ = self.planner.auto_xy_servo_move(self.config, {}, self.plc, self.queues)
         self.assertEqual(150, commands["y"].Pos)
-        self.plc.AxisList[2].Pos = 150
+        self.plc.AxisList[8].Pos = 150
         commands, _ = self.planner.auto_xy_servo_move(self.config, {"out_front_x_offset": 100}, self.plc, self.queues)
         self.assertEqual((500, 400), (commands["y"].Pos, commands["x"].Pos))
 
     def test_position_and_speed_limits_and_right_side_mapping(self):
         self.config.update(sn=5, install_orietation="right", x_pos_speed=1000, y_recip_speed=1000, out_up_y_offset=1000, out_down_y_offset=1000)
         self.put(200, 200, 2000)
-        self.plc.AxisList[4].Pos = 600
+        self.plc.AxisList[18].Pos = 600
         commands, _ = self.planner.auto_xy_servo_move(self.config, {}, self.plc, self.queues)
         self.assertEqual((0, 300, 750, 500), (commands["y"].Pos, commands["y"].Speed, commands["x"].Pos, commands["x"].Speed))
 
@@ -80,7 +80,7 @@ class XYServoTests(unittest.TestCase):
         self.config.update(origin_pos=[100], x_position=100)
         commands, _ = self.planner.auto_xy_servo_move(self.config, {}, self.plc, self.queues)
         self.assertEqual((400, 350), (commands["y"].Pos, commands["x"].Pos))
-        self.plc.AxisList[2].Pos = 400
+        self.plc.AxisList[8].Pos = 400
         commands, _ = self.planner.auto_xy_servo_move(self.config, {}, self.plc, self.queues)
         self.assertEqual(50, commands["y"].Pos)
 
@@ -123,12 +123,19 @@ class XYServoTests(unittest.TestCase):
         self.put(250)
         planner, proc = self.make_runtime()
         frame = planner.build_moving_frame(proc)
-        self.assertEqual((7, 7), (frame.AxisList[3].Status, frame.AxisList[5].Status))
-        self.assertEqual((200, 200), (frame.AxisList[2].Speed, frame.AxisList[4].Speed))
+        self.assertEqual((7, 7), (frame.AxisList[9].Status, frame.AxisList[19].Status))
+        self.assertEqual((200, 200), (frame.AxisList[8].Speed, frame.AxisList[18].Speed))
         self.assertEqual((0, 0), (frame.Gun_cont1, frame.Gun_cont2))
         restored, _ = type(frame).from_bytes(frame.to_bytes())
-        self.assertEqual((7, 7), (restored.AxisList[3].Status, restored.AxisList[5].Status))
+        self.assertEqual((7, 7), (restored.AxisList[9].Status, restored.AxisList[19].Status))
         self.assertEqual(0x8002, restored.Control & 0xFFFF)
+
+    def test_pc_auto_status_bit_does_not_trigger_servo_alarm(self):
+        self.put(200)
+        planner, proc = self.make_runtime()
+        proc.plc_data.Status = 3
+        frame = planner.build_moving_frame(proc)
+        self.assertEqual((2, 2), (frame.AxisList[9].Status, frame.AxisList[19].Status))
 
     def test_disabled_fault_manual_and_cleaning_paths_clear_guns(self):
         self.put(200)
@@ -148,14 +155,14 @@ class XYServoTests(unittest.TestCase):
                 else:
                     self.plc.Operate |= planner.cleaning_planner.CLEAN_MODE_BIT
                 frame = planner.build_moving_frame(proc)
-                self.assertEqual((0, 0), (frame.AxisList[3].Status, frame.AxisList[5].Status))
+                self.assertEqual((0, 0), (frame.AxisList[9].Status, frame.AxisList[19].Status))
 
     def test_planner_uses_ui_request_and_not_plc_device_bits(self):
         self.put(200)
         planner, proc = self.make_runtime()
         proc.device_enable_mask = 1 | (1 << 6)
         frame = planner.build_moving_frame(proc)
-        self.assertEqual((0, 2), (frame.AxisList[3].Status, frame.AxisList[5].Status))
+        self.assertEqual((0, 2), (frame.AxisList[9].Status, frame.AxisList[19].Status))
         proc.device_enable_mask = 0
         frame = planner.build_moving_frame(proc)
-        self.assertEqual((0, 0), (frame.AxisList[3].Status, frame.AxisList[5].Status))
+        self.assertEqual((0, 0), (frame.AxisList[9].Status, frame.AxisList[19].Status))

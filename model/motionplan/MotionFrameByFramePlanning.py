@@ -32,7 +32,7 @@ class MotionFrameByFramePlanning:
         moving_frame = SendMovingFrameData()
         plc_enable = (requested_operate(proc) & 0x01) == 1
         axis_list = create_axis_list()
-        servo_alarm = proc.plc_data.Status != 1
+        servo_alarm = not bool(int(proc.plc_data.Status) & 1)
         lidar_abnormal = int(getattr(proc, "lidar_status", 0) or 0) in (1, 2, 3)
         raw_data_timeout = bool(getattr(proc, "raw_data_timeout_active", False))
         force_disable_all = (not plc_enable) or servo_alarm or lidar_abnormal or raw_data_timeout
@@ -99,7 +99,7 @@ class MotionFrameByFramePlanning:
             if not device_operate_enabled or should_return_safe:
                 axis_cmds, all_ready = self._build_inactive_device_axes(proc, sn, machine_cfg, runtime_cfg, machine_type, should_return_safe)
                 proc.device_origin_complete[sn] = all_ready
-                device_enable = should_return_safe and not all_ready
+                device_enable = device_operate_enabled or (should_return_safe and not all_ready)
             else:
                 axis_cmds, device_stop_chain = self._build_active_device_axes(proc, sn, machine_cfg, runtime_cfg, machine_type)
                 stop_chain = stop_chain or device_stop_chain

@@ -1,19 +1,8 @@
-"""
-设备轴索引映射配置模块。
+"""本项目收发共用的 20 轴映射（下标从 0 开始）。
 
-按设备 type 和 install_orietation 查找本项目收发共用的 PLC AxisList 索引。
-轴按报文排列，不按设备连续排列；以下均为从0开始的索引：
-
-    0 左侧面Z，1 右侧面Z
-    2 左二维Y，3 左二维X，4 右二维Y，5 右二维X
-    6 左侧面Y2，7 左侧面X2，8 左侧面R2
-    9 右侧面Y2，10 右侧面X2，11 右侧面R2
-    12 左侧面Y1，13 左侧面X1，14 左侧面R1
-    15 右侧面Y1，16 右侧面X1，17 右侧面R1
-    18 激光201，19 激光202，20 激光203，21 激光204
-
-轴名称统一使用 x/x1/x2，索引查询和指令写入使用相同名称。
-映射不决定设备SN、轴限位或运动策略，配置与规划需单独按本项目适配。
+左内外顶 Y1/X1/Y2/X2=0/1/2/3；左内外底=4/5/6/7；左二维 Y/X=8/9。
+右内外顶 Y1/X1/Y2/X2=10/11/12/13；右内外底=14/15/16/17；右二维 Y/X=18/19。
+四轴设备的两元素限位/速度/安全位按 Y/X 共用，四元素配置按 Y1/X1/Y2/X2 读取。
 """
 
 from model.utils.LoggerUtil import logger
@@ -27,16 +16,11 @@ INT16_MAX = 32767
 
 AXIS_LIMIT_KEY: dict[str, dict[str, int]] = {
     "H2D_XYservo": {"y": 0, "x": 1},
-    "xn_rotate": {"z": 0, "y": 1, "x": 2, "r": 3},
-    "z_2d_lift": {"y": 0, "x": 1},
+    "inout_up": {"y": 0, "x": 1},
+    "inout_down": {"y": 0, "x": 1},
 }
 
-XN_UPDOWN2_MAX_LIMIT_INDEX = {
-    "y1": 0,
-    "x1": 1,
-    "y2": 2,
-    "x2": 3,
-}
+FOUR_AXIS_CONFIG_INDEX = {"y1": 0, "x1": 1, "y2": 2, "x2": 3}
 
 
 def get_axis_config_index(machine_type: str, axis_name: str) -> int | None:
@@ -58,9 +42,9 @@ def get_axis_config_value(machine_cfg: dict, axis_name: str, config_key: str, de
     machine_type = machine_cfg.get("type", "")
     values = machine_cfg.get(config_key, [])
     idx = get_axis_config_index(machine_type, axis_name)
-    if machine_type == "xn_updown2" and config_key == "max_limit_pos" and isinstance(values, (list, tuple)) and len(values) >= 4:
-        # 顶底两组只对最大位置限位使用独立四轴配置；两元素旧配置仍走通用 Y/X 索引。
-        idx = XN_UPDOWN2_MAX_LIMIT_INDEX.get(axis_name, idx)
+    if machine_type in ("inout_up", "inout_down") and isinstance(values, (list, tuple)) and len(values) >= 4:
+        # 四元素按独立轴读取；两元素按 Y/X 共用。
+        idx = FOUR_AXIS_CONFIG_INDEX.get(axis_name, idx)
     if idx is not None and isinstance(values, (list, tuple)) and idx < len(values):
         return int(values[idx] or 0)
     return default
@@ -84,23 +68,22 @@ def get_axis_safe_pos(machine_cfg: dict, axis_name: str, default: int = 0) -> in
 
 
 MACHINE_AXIS_MAP = {
+    "inout_up": {
+        "left": dict(y1=0, x1=1, y2=2, x2=3),
+        "right": dict(y1=10, x1=11, y2=12, x2=13),
+    },
+    "inout_down": {
+        "left": dict(y1=4, x1=5, y2=6, x2=7),
+        "right": dict(y1=14, x1=15, y2=16, x2=17),
+    },
     "H2D_XYservo": {
-        "left": dict(y=2, x=3),
-        "right": dict(y=4, x=5),
-    },
-    # 第三模式：同侧两台设备共用Z，但仅xn_rotate拥有Z指令写入权。
-    "xn_rotate": {
-        "left": dict(z=0, y1=12, x1=13, r1=14, y2=6, x2=7, r2=8),
-        "right": dict(z=1, y1=15, x1=16, r1=17, y2=9, x2=10, r2=11),
-    },
-    "z_2d_lift": {
-        "left": dict(y=2, x=3),
-        "right": dict(y=4, x=5),
+        "left": dict(y=8, x=9),
+        "right": dict(y=18, x=19),
     },
 }
 
-
-LIDAR_AXIS_MAP = {"201": 18, "202": 19, "203": 20, "204": 21}
+# 本项目的 20 个 PLC 轴均已分配给喷涂设备，无旧项目的激光运动轴。
+LIDAR_AXIS_MAP: dict[str, int] = {}
 
 
 def get_lidar_axis_index(lidar_id: str | int) -> int:
@@ -148,24 +131,11 @@ def get_all_axis_indices(machine_type: str, orientation: str) -> list:
 
 def _limit_axis_command(machine_cfg: dict, axis_name: str, axis_data: AxisData) -> AxisData:
     """在写入 PLC 报文前统一限制单轴位置和速度。"""
-    machine_type = machine_cfg.get("type", "")
-    if machine_type == "out_2d_servo" and axis_name == "y":
-        pos = int(axis_data.Pos)
-        speed = int(axis_data.Speed)
-        if not (INT16_MIN <= pos <= INT16_MAX and INT16_MIN <= speed <= INT16_MAX):
-            sn = machine_cfg.get("sn", "?")
-            logger.error(
-                f"SN[{sn}] out_2d_servo Y点云载荷超出Int16，当前轴发送零值: "
-                f"Pos={pos}, Speed={speed}"
-            )
-            return AxisData()
-        return AxisData(Pos=pos, Speed=speed, Status=0)
-
     min_position, max_position = get_axis_position_limits(machine_cfg, axis_name)
     if min_position > max_position:
         raise ValueError(f"轴 {axis_name} 的位置限位无效: {min_position} > {max_position}")
     max_speed = get_axis_speed_limit(machine_cfg, axis_name)
-    status = 0 if machine_type in ("xn_rotate", "z_2d_lift") else int(axis_data.Status)
+    status = int(axis_data.Status)
     return AxisData(Pos=clamp_to_limit_yx(int(axis_data.Pos), min_position, max_position), Speed=clamp_speed(int(axis_data.Speed), max_speed), Status=status)
 
 

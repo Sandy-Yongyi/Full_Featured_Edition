@@ -8,7 +8,7 @@
 - X：`x_min - out_front_x_offset - x_position`，速度为 `x_pos_speed`。
 - 三枪检测分别为 `z_position - spray_radius / 2 - spray_radius` 至 `z_position - spray_radius / 2`、中间 `z_position ± spray_radius / 2`、`z_position + spray_radius / 2` 至 `z_position + spray_radius / 2 + spray_radius`。这些窗口单独扫描，不受运动搜索窗口截断。
 - 边界向上取整并转换到 Z 帧索引；使用闭区间，共享边界有数据时两把相邻枪均可置位。
-- 第 1/2/3 把枪分别使用 X 轴 `Status` 的 bit0/1/2，掩码为 0～7；不写入 `Gun_cont1/2`。左侧 X 为 AxisList[3]，右侧 X 为 AxisList[5]。
+- 第 1/2/3 把枪分别使用 X 轴 `Status` 的 bit0/1/2，掩码为 0～7；不写入 `Gun_cont1/2`。左侧 X 为 AxisList[9]，右侧 X 为 AxisList[19]。
 - XY 位置按设备限位及 Int16 范围限制；速度限制到非负设备最大速度与 Int16 范围。没有有效运动范围、配置异常或速度为零时不开枪。
 - 关闭设备、安全返回、手动和清理模式不带三枪状态；使能请求由策略规划器处理：关闭按钮立即关枪，但设备报文位持续为 1，所有轴回到安全位置后才清零；发包层不再覆盖规划结果。
 
