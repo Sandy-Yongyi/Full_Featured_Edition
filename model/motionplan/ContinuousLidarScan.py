@@ -3,7 +3,7 @@
 import math
 
 from model.motionplan.MachineAxisMap import LIDAR_AXIS_MAP
-from model.plc.MovingFrameData import AxisData, SendMovingFrameData
+from model.MovingFrameData import AxisData, SendMovingFrameData
 
 
 class ContinuousLidarScan:

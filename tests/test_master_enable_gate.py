@@ -70,7 +70,7 @@ class MasterEnableGateTests(unittest.TestCase):
     def test_safe_feedback_checks_every_axis_and_rejects_unknown_mapping(self):
         from control.PlcCommunicationProcess import PlcCommunicationProcess
         from model.motionplan.MotionToTarget import MotionToTarget
-        from model.plc.MovingFrameData import ReceiveMovingFrameData
+        from model.MovingFrameData import ReceiveMovingFrameData
         p = PlcCommunicationProcess.__new__(PlcCommunicationProcess)
         p.strategy_name = "frame_by_frame"
         p.frame_by_frame_motion_planner = SimpleNamespace(motion_to_target=MotionToTarget())

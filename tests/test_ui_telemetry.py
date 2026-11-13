@@ -78,7 +78,7 @@ class UiTelemetryTests(unittest.TestCase):
         self.assertEqual(3, message["plc_status"])
 
     def test_lidar_feedback_distinguishes_healthy_and_failed_scan(self):
-        from model.lidar.LidarAcquisitionProcess import LidarAcquisitionProcess
+        from acquisition_sdk._internal.lidar.LidarAcquisitionProcess import LidarAcquisitionProcess
         from model.utils.UiTelemetry import UiStatusPublisher
         output = queue.Queue()
         state = SimpleNamespace(ui_status=UiStatusPublisher(output, "lidar"),

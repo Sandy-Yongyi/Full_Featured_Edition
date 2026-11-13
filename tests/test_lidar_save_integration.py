@@ -5,9 +5,9 @@ import unittest
 
 import numpy as np
 
-from model.lidar.LidarAcquisitionProcess import LidarAcquisitionProcess
-from model.dataprocess.DataSplitting import DataSplitting
-from model.pointcloud.PointCloudSaveBuffer import PointCloudSaveBuffer, SharedPointCloudPool, read_blocks
+from acquisition_sdk._internal.lidar.LidarAcquisitionProcess import LidarAcquisitionProcess
+from acquisition_sdk._internal.dataprocess.DataSplitting import DataSplitting
+from acquisition_sdk._internal.pointcloud.PointCloudSaveBuffer import PointCloudSaveBuffer, SharedPointCloudPool, read_blocks
 
 
 class AcquisitionSavingTests(unittest.TestCase):
@@ -93,7 +93,7 @@ class AcquisitionSavingTests(unittest.TestCase):
         self.assertEqual(len(self.process.direction_states["left"].xyz_data), 4)
 
     def test_three_modes_keep_their_own_coordinates_and_delivery_interfaces(self):
-        from model.lidar.LidarAcquisitionStrategies import AcquisitionStrategyFactory
+        from acquisition_sdk._internal.lidar.LidarAcquisitionStrategies import AcquisitionStrategyFactory
         for strategy in ("frame_by_frame", "complete_workpiece", "continuous_bidirectional"):
             for origin in (1, 2):
                 with self.subTest(strategy=strategy, origin=origin):
@@ -132,7 +132,7 @@ class AcquisitionSavingTests(unittest.TestCase):
                     self.buffer.acknowledge({"job_id": job["job_id"], "blocks": [b for v in job["channels"].values() for b in v]})
 
     def test_plc_frame_queue_continues_while_save_job_is_pending(self):
-        from model.dataprocess.frame_by_frame.BuildSideFrame import build_side_frame
+        from acquisition_sdk._internal.dataprocess.frame_by_frame.BuildSideFrame import build_side_frame
         self.process._save_valid_data_core(0)
         self.process._save_workpiece_data()
         self.process.raw_data_queue = queue.Queue()
@@ -156,7 +156,7 @@ class AcquisitionSavingTests(unittest.TestCase):
             self.assertEqual(len(message["left"].FrameData), 50)
 
     def test_reset_discards_active_blocks_without_releasing_pending_save(self):
-        from model.lidar.LidarDirectionState import LidarDirectionState
+        from acquisition_sdk._internal.lidar.LidarDirectionState import LidarDirectionState
         self.process._save_valid_data_core(0)
         self.process._save_workpiece_data()
         job = self.process.save_task_queue.get_nowait()
@@ -170,8 +170,8 @@ class AcquisitionSavingTests(unittest.TestCase):
         self.assertEqual(len(points), 2)
 
     def test_continuous_interrupted_pass_releases_blocks_and_is_not_saved(self):
-        from model.lidar.LidarAcquisitionStrategies import ContinuousBidirectionalStrategy
-        from model.lidar.LidarDirectionState import LidarDirectionState
+        from acquisition_sdk._internal.lidar.LidarAcquisitionStrategies import ContinuousBidirectionalStrategy
+        from acquisition_sdk._internal.lidar.LidarDirectionState import LidarDirectionState
         from model.utils.ProcessHeartbeat import ProcessHeartbeat
         self.process.strategy_name = "continuous_bidirectional"
         self.process._save_valid_data_core(95)

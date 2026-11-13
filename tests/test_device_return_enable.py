@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from model.plc.MovingFrameData import ReceiveMovingFrameData
+from model.MovingFrameData import ReceiveMovingFrameData
 from model.motionplan.MotionFrameByFramePlanning import MotionFrameByFramePlanning
 from model.motionplan.MotionCompleteWorkpiecePlanning import MotionCompleteWorkpiecePlanning
 

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from model.pointcloud.PointCloudSaveService import PointCloudSaveService
+from acquisition_sdk._internal.pointcloud.PointCloudSaveService import PointCloudSaveService
 
 
 class SaveConfigLoadingTests(unittest.TestCase):
@@ -43,7 +43,7 @@ class SaveConfigLoadingTests(unittest.TestCase):
             path = Path(directory) / "ReadDataConfig.toml"
             original = b'point_cloud_save_block_count = 32\npoint_cloud_save_block_count = 64\n'
             path.write_bytes(original)
-            with patch("model.pointcloud.PointCloudSaveService.SharedPointCloudPool.create") as create:
+            with patch("acquisition_sdk._internal.pointcloud.PointCloudSaveService.SharedPointCloudPool.create") as create:
                 with self.assertRaises(ValueError):
                     PointCloudSaveService.from_config_file(path, directory)
                 create.assert_not_called()

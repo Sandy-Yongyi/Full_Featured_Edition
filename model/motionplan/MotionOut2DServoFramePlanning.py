@@ -6,7 +6,7 @@ from model.motionplan.MotionToTarget import MotionToTarget
 from model.motionplan.motionutil.AxisLimits import build_axis, clamp_to_limit_yx
 from model.motionplan.motionutil.FrameSearchHelper import FrameSearchHelper
 from model.motionplan.motionutil.FrameXMotionHelper import FrameXMotionHelper
-from model.plc.MovingFrameData import AxisData
+from model.MovingFrameData import AxisData
 from model.utils.LoggerUtil import logger
 from model.utils.TomlLoader import TomlLoader
 

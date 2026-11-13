@@ -83,7 +83,7 @@ class QtPointCloudViewTests(unittest.TestCase):
         self.assertIsNone(view.colors)
 
     def test_block_data_boxes_generate_all_three_region_types(self):
-        from model.formats.complete_workpiece.BlockDataFormat import BlockData, OutsideData, InsideData, SubInsideData, JigData
+        from acquisition_sdk._internal.formats.complete_workpiece.BlockDataFormat import BlockData, OutsideData, InsideData, SubInsideData, JigData
         from view.qt.point_cloud_view import QtPointCloudView
         block = BlockData(
             outside_data=[OutsideData(0, 10, 0, 20, 0, 30)],

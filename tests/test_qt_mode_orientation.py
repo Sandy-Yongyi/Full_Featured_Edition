@@ -17,9 +17,9 @@ class ModeOrientationTests(unittest.TestCase):
     def test_all_modes_share_preview_origin_and_default_negative_x_view(self):
         from control.DataProcessWorker import DataProcessWorker
         from control.DataProcessingProcess import DataProcessingProcess
-        from model.pointcloud.PointCloudFileProcess import prepare_file_preview
+        from acquisition_sdk._internal.pointcloud.PointCloudFileProcess import prepare_file_preview
         from model.telemetry.UiState import UiState
-        from model.formats.complete_workpiece.BlockDataFormat import BlockData
+        from acquisition_sdk._internal.formats.complete_workpiece.BlockDataFormat import BlockData
         from view.qt.pages import RealtimeControlPage
         points = np.array([[100, 10, 0], [200, 20, 100]], dtype=np.float32)
         for origin, same, expected_x in (("right", 1, [900, 800]), ("left", 1, [100, 200]),
@@ -54,7 +54,7 @@ class ModeOrientationTests(unittest.TestCase):
         np.testing.assert_array_equal(points[:, 0], [100, 200])
 
     def test_file_preview_converts_only_display_copy_and_keeps_rgb(self):
-        from model.pointcloud.PointCloudFileProcess import prepare_file_preview
+        from acquisition_sdk._internal.pointcloud.PointCloudFileProcess import prepare_file_preview
         points = np.array([[100, 10, 20, 0.1, 0.2, 0.3]], dtype=np.float32)
         config = {"translate_data_origin": 1, "workpiece_origin_side": "right", "workpiece_origin_reference_x": 1000}
         preview = prepare_file_preview(points, config)

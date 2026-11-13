@@ -6,7 +6,7 @@ from types import SimpleNamespace
 class DeviceEnableTests(unittest.TestCase):
     def test_new_operate_and_control_fields_serialize_independently(self):
         import struct
-        from model.plc.MovingFrameData import SendMovingFrameData
+        from model.MovingFrameData import SendMovingFrameData
         frame = SendMovingFrameData(Operate=127, Control=2, HeartBeat=123)
         raw = frame.to_bytes()
         self.assertEqual(127, struct.unpack_from('>i', raw, 0)[0])

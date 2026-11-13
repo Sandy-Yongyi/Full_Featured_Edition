@@ -13,7 +13,7 @@ class TaskFeedbackTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def make_process(self):
-        from model.formats.complete_workpiece.BlockDataFormat import BlockData, DistribeGunData, GunGroupData, SingleMachineData
+        from acquisition_sdk._internal.formats.complete_workpiece.BlockDataFormat import BlockData, DistribeGunData, GunGroupData, SingleMachineData
         block = BlockData(distribe_gun_list=[SingleMachineData(machine_id=1, gun_groups=[
             GunGroupData(group_type="outside", group_id=0, gundata_list=[
                 DistribeGunData(gun_id=5, gun_y_enable=1, gun_y_upper=400, gun_y_downer=100, gun_r_angle=0)

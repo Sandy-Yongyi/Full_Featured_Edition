@@ -12,7 +12,7 @@ from model.motionplan.MotionToTarget import MotionToTarget
 from model.motionplan.MotionXNUpdown2FramePlanning import MotionXNUpdown2FramePlanning
 from model.motionplan.MotionXNUpdown4FramePlanning import MotionXNUpdown4FramePlanning
 from model.motionplan.motionutil.DeviceQueueHelper import DeviceQueueHelper
-from model.plc.MovingFrameData import SendMovingFrameData, create_axis_list
+from model.MovingFrameData import SendMovingFrameData, create_axis_list
 
 
 class MotionFrameByFramePlanning:

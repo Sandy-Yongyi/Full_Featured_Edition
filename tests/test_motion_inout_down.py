@@ -2,9 +2,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from model.formats.frame_by_frame.AxisFrameDataFormat import AxisData as CloudRow, AxisFrameData
+from acquisition_sdk._internal.formats.frame_by_frame.AxisFrameDataFormat import AxisData as CloudRow, AxisFrameData
 from model.motionplan.MotionInOutDownPlanning import MotionInOutDownPlanning
-from model.plc.MovingFrameData import ReceiveMovingFrameData
+from model.MovingFrameData import ReceiveMovingFrameData
 
 
 class InOutDownTests(unittest.TestCase):

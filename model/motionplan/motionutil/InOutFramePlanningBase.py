@@ -4,10 +4,10 @@ import math
 import os
 from dataclasses import dataclass
 
-from model.dataprocess.frame_by_frame.BeamDetector import BeamDetector
+from acquisition_sdk import BeamDetector
 from model.motionplan.MachineAxisMap import enforce_inout_y_order, get_axis_index, get_axis_position_limits, get_axis_safe_pos, get_axis_speed_limit, limit_inout_y_targets
 from model.motionplan.MotionToTarget import MotionToTarget
-from model.plc.MovingFrameData import AxisData
+from model.MovingFrameData import AxisData
 from model.utils.LoggerUtil import logger
 from model.utils.TomlLoader import TomlLoader
 

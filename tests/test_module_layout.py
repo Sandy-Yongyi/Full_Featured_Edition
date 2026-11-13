@@ -17,21 +17,20 @@ class ModuleLayoutTests(unittest.TestCase):
 
     def test_moved_process_types_import_from_canonical_modules(self):
         for module, name in (
-            ('model.lidar.LidarAcquisitionProcess', 'LidarAcquisitionProcess'),
-            ('model.pointcloud.PointCloudFileProcess', 'PointCloudFileProcess'),
-            ('model.pointcloud.PointCloudSaveProcess', 'PointCloudSaveProcess'),
+            ('acquisition_sdk._internal.lidar.LidarAcquisitionProcess', 'LidarAcquisitionProcess'),
+            ('acquisition_sdk._internal.pointcloud.PointCloudFileProcess', 'PointCloudFileProcess'),
+            ('acquisition_sdk._internal.pointcloud.PointCloudSaveProcess', 'PointCloudSaveProcess'),
             ('control.PipelineRuntime', 'PipelineRuntime'),
         ):
             self.assertEqual(module, getattr(importlib.import_module(module), name).__module__)
 
-    def test_build_manifest_only_compiles_five_private_packages(self):
-        from model.build_extensions import PRIVATE_PACKAGES, get_extensions
-        extensions = get_extensions()
-        self.assertTrue(extensions)
-        for extension in extensions:
-            self.assertIn(extension.name.split('.')[1], PRIVATE_PACKAGES)
-            for source in extension.sources:
-                self.assertTrue((ROOT / source).is_file(), source)
+    def test_build_manifest_only_compiles_confirmed_sdk_sources(self):
+        from tools.build_sdk import get_private_sources
+        sources = get_private_sources()
+        self.assertEqual(22, len(sources))
+        for source in sources:
+            self.assertTrue(source.is_file(), source)
+            self.assertTrue(source.is_relative_to(ROOT / 'acquisition_sdk' / '_internal'))
         self.assertFalse((ROOT / 'model' / 'plot').exists())
 
     def test_source_environment_root_is_project_root(self):

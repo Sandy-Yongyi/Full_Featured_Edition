@@ -7,13 +7,13 @@ import queue
 import multiprocessing
 from typing import Any, cast
 from model.utils.LoggerUtil import check_and_rotate_log, logger
-from model.plc.PlcCommon import PlcManager
+from acquisition_sdk import PlcManager
 from model.utils.TomlLoader import TomlLoader
-from model.plc.MovingFrameData import ReceiveMovingFrameData, SendMovingFrameData
-from model.utils.FrameQueueManager import FrameQueueManager
-from model.formats.complete_workpiece.BlockDataFormat import BlockData
-from model.formats.frame_by_frame.AxisFrameDataFormat import AxisFrameData
-from model.dataprocess.complete_workpiece.GunDistributor import GunDistributor
+from model.MovingFrameData import ReceiveMovingFrameData, SendMovingFrameData
+from acquisition_sdk import FrameQueueManager
+from acquisition_sdk import BlockData
+from acquisition_sdk import AxisFrameData
+from model.gun_distributors.GunDistributor import GunDistributor
 from model.motionplan.MotionFrameByFramePlanning import MotionFrameByFramePlanning
 from model.motionplan.motionutil.DeviceEnableHelper import validate_enable_transition
 from model.utils.StrategyUtil import is_complete_workpiece_mode, is_continuous_bidirectional_mode, validate_strategy_name

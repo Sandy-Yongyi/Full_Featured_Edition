@@ -183,7 +183,7 @@ class DeveloperModesTests(unittest.TestCase):
                     self.stop_center(center)
 
     def test_directory_dataset_selection_and_mixed_rgb_inputs(self):
-        from model.pointcloud.PointCloudFileProcess import resolve_txt_files, load_txt_cloud
+        from acquisition_sdk._internal.pointcloud.PointCloudFileProcess import resolve_txt_files, load_txt_cloud
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "left_a.txt").write_text("1 2 3 255 0 0\n", encoding="utf-8")

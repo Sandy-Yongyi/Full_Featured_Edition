@@ -1,6 +1,6 @@
 import os
 from model.motionplan.motionutil.MotionUtil import MotionUtil
-from model.plc.MovingFrameData import AxisData
+from model.MovingFrameData import AxisData
 from model.utils.TomlLoader import TomlLoader
 
 

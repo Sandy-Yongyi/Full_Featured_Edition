@@ -8,7 +8,7 @@ from model.motionplan.MotionCleaningPlanning import MotionCleaningPlanning
 from model.motionplan.MotionOutFxCompleteWorkpiecePlanning import MotionOutFxCompleteWorkpiecePlanning
 from model.motionplan.MotionToTarget import MotionToTarget
 from model.motionplan.MotionXNSidePlanning import MotionXNSidePlanning
-from model.plc.MovingFrameData import SendMovingFrameData, create_axis_list
+from model.MovingFrameData import SendMovingFrameData, create_axis_list
 from model.utils.LoggerUtil import logger
 
 

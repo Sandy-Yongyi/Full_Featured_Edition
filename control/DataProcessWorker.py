@@ -6,13 +6,13 @@ import time
 import numpy as np
 import multiprocessing
 from contextlib import nullcontext
-from model.dataprocess.DataSplitting import DataSplitting
+from acquisition_sdk import DataSplitting
 from model.utils.LoggerUtil import logger
 from model.utils.TomlLoader import TomlLoader
 from model.utils.LidarDirectionUtil import ALL_DIRECTIONS, get_active_directions
 from model.utils.StrategyUtil import is_complete_workpiece_mode, is_frame_by_frame_mode, validate_strategy_name
 from model.utils.WorkpieceOriginUtil import get_origin_side, transform_points_for_origin
-from model.dataprocess.frame_by_frame.BuildSideFrame import build_side_frame
+from acquisition_sdk import build_side_frame
 from model.utils.ProcessHeartbeat import ProcessHeartbeat
 
 

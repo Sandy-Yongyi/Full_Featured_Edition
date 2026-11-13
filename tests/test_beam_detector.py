@@ -2,8 +2,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from model.dataprocess.frame_by_frame.BeamDetector import BeamDetector
-from model.formats.frame_by_frame.AxisFrameDataFormat import AxisData, AxisFrameData
+from acquisition_sdk._internal.dataprocess.frame_by_frame.BeamDetector import BeamDetector
+from acquisition_sdk._internal.formats.frame_by_frame.AxisFrameDataFormat import AxisData, AxisFrameData
 
 
 def frame(*ys):
@@ -116,7 +116,7 @@ class BeamDetectorTests(unittest.TestCase):
 class BeamDetectionIntegrationTests(unittest.TestCase):
     def test_inout_devices_delegate_detection_and_unreachable_down_beam_keeps_powder_off(self):
         from model.motionplan.MotionFrameByFramePlanning import MotionFrameByFramePlanning
-        from model.plc.MovingFrameData import ReceiveMovingFrameData
+        from model.MovingFrameData import ReceiveMovingFrameData
         from model.utils.TomlLoader import TomlLoader
 
         planner = MotionFrameByFramePlanning()

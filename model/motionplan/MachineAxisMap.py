@@ -7,7 +7,7 @@
 
 from model.utils.LoggerUtil import logger
 from model.motionplan.motionutil.AxisLimits import clamp_speed, clamp_to_limit_yx
-from model.plc.MovingFrameData import AxisData
+from model.MovingFrameData import AxisData
 
 
 INT16_MIN = -32768

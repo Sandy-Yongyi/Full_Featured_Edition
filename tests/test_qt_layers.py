@@ -25,7 +25,7 @@ class LayerTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def block(self):
-        from model.formats.complete_workpiece.BlockDataFormat import BlockData, OutsideData, InsideData, SubInsideData, JigData
+        from acquisition_sdk._internal.formats.complete_workpiece.BlockDataFormat import BlockData, OutsideData, InsideData, SubInsideData, JigData
         return BlockData(outside_data=[OutsideData(0, 10, 0, 20, 0, 30)],
                          inside_data=[InsideData(1, [SubInsideData(1, 1, 9, 2, 18, 3, 27)])],
                          jig_data=[JigData(1, 5, 6, 7, 8)])

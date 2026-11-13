@@ -8,8 +8,8 @@ import unittest
 
 import numpy as np
 
-from model.pointcloud.PointCloudSaveBuffer import PointCloudSaveBuffer
-from model.pointcloud.PointCloudSaveService import PointCloudSaveService, stop_pipeline
+from acquisition_sdk._internal.pointcloud.PointCloudSaveBuffer import PointCloudSaveBuffer
+from acquisition_sdk._internal.pointcloud.PointCloudSaveService import PointCloudSaveService, stop_pipeline
 
 
 def _seal_on_stop(descriptor, tasks, acks, stop_event):
@@ -24,7 +24,7 @@ def _seal_on_stop(descriptor, tasks, acks, stop_event):
 
 
 def _acquisition_cleanup_with_backlog(descriptor, tasks, acks, statuses, raw_queue, stop_event, ready):
-    from model.lidar.LidarAcquisitionProcess import LidarAcquisitionProcess
+    from acquisition_sdk._internal.lidar.LidarAcquisitionProcess import LidarAcquisitionProcess
     acquisition = LidarAcquisitionProcess.__new__(LidarAcquisitionProcess)
     acquisition.save_buffer = PointCloudSaveBuffer(descriptor, acks)
     acquisition.save_task_queue = tasks

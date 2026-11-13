@@ -13,16 +13,16 @@ import time
 from typing import Any
 
 from model.utils.ConfigurationService import ConfigurationService
-from model.lidar.LidarAcquisitionProcess import LidarAcquisitionProcess
+from acquisition_sdk import LidarAcquisitionProcess
 from control.PlcCommunicationProcess import PlcCommunicationProcess
 from model.telemetry.RuntimeStateCollector import RuntimeStateCollector
 from model.runtime.ProcessHealthMonitor import ProcessHealthMonitor
-from model.pointcloud.PointCloudFileProcess import PointCloudFileProcess, resolve_txt_files
+from acquisition_sdk import PointCloudFileProcess, resolve_txt_files
 from model.telemetry.UiState import DeviceState, TaskState
-from model.dataprocess.DataFilter import DataFilter
+from acquisition_sdk import DataFilter
 from model.utils.LidarDirectionUtil import get_active_lidar_config
 from model.utils.LoggerUtil import logger, manage_log_files, log_directory
-from model.pointcloud.PointCloudSaveService import PointCloudSaveService, stop_pipeline
+from acquisition_sdk import PointCloudSaveService, stop_pipeline
 from model.utils.StrategyUtil import is_complete_workpiece_mode, strategy_name_from_code
 from model.utils.TomlLoader import TomlLoader
 from model.utils.MachineConfigUtil import get_machine_config_path

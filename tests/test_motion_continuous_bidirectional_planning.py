@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from model.motionplan.MachineAxisMap import LIDAR_AXIS_MAP
 from model.motionplan.MotionContinuousBidirectionalPlanning import MotionContinuousBidirectionalPlanning
 from model.motionplan.MotionCleaningPlanning import MotionCleaningPlanning
-from model.plc.MovingFrameData import AxisData, ReceiveMovingFrameData, SendMovingFrameData
+from model.MovingFrameData import AxisData, ReceiveMovingFrameData, SendMovingFrameData
 from model.utils.TomlLoader import TomlLoader
 from control.PlcCommunicationProcess import PlcCommunicationProcess
 import queue

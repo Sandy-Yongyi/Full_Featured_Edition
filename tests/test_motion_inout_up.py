@@ -1,9 +1,9 @@
 import unittest
 from types import SimpleNamespace
 
-from model.formats.frame_by_frame.AxisFrameDataFormat import AxisData as CloudRow, AxisFrameData
+from acquisition_sdk._internal.formats.frame_by_frame.AxisFrameDataFormat import AxisData as CloudRow, AxisFrameData
 from model.motionplan.MotionInOutUpPlanning import MotionInOutUpPlanning
-from model.plc.MovingFrameData import ReceiveMovingFrameData
+from model.MovingFrameData import ReceiveMovingFrameData
 
 
 class InOutUpTests(unittest.TestCase):

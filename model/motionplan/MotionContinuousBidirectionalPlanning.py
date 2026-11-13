@@ -4,7 +4,7 @@ from model.motionplan.motionutil.DeviceEnableHelper import final_operate, reques
 from model.motionplan.MachineAxisMap import apply_device_axes_to_list
 from model.motionplan.MotionCleaningPlanning import MotionCleaningPlanning
 from model.motionplan.MotionToTarget import MotionToTarget
-from model.plc.MovingFrameData import SendMovingFrameData
+from model.MovingFrameData import SendMovingFrameData
 from model.utils.LoggerUtil import logger
 
 

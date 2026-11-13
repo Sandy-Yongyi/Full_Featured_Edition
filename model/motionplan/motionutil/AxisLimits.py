@@ -1,4 +1,4 @@
-from model.plc.MovingFrameData import AxisData
+from model.MovingFrameData import AxisData
 
 
 def clamp_speed(speed: int, max_speed: int) -> int:

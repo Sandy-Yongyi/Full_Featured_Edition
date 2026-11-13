@@ -2,6 +2,22 @@
 
 基于 PyQt6 的控制中心，负责激光采集、点云处理、运动规划、PLC 通讯与点云保存。根目录唯一 Python 启动文件为 `main.py`。
 
+面向项目开发人员、不依赖内部docs/tools/tests的交付指南见 [README_DEVELOPER.md](README_DEVELOPER.md)。使用 `python tools/package_sdk.py --developer --minimal-stub` 生成含该指南及上层所用接口精简声明的开发交付包；包内指南文件名为README.md。
+
+## 内部一键交付
+
+双击根目录 `release_sdk.cmd`，或执行 `py -3.11 tools/release_sdk.py`。默认重新编译SDK，按精简规则打包，并自动解压核对哈希、二进制导入、公开报文、Windows子进程和部署自检。需要本机已安装Python3.11 x64、项目依赖、Nuitka及Visual Studio x64 C++工具链；不自动安装或升级环境。
+
+输出在 `output/releases/时间戳/`，只把其中的ZIP交给开发人员，不交付整个时间戳目录。每次生成独立目录，不覆盖历史发布；验收失败不会标记成功。验收为离线自检，不连接雷达/PLC，不代替现场验收。
+
+文件哈希清单以ZIP同名的`.manifest.json`保存在内部输出目录，校验时使用，不放入交付ZIP，开发人员无需该文件。
+
+当前环境补充：重新编译成功后的新pyd曾被本机应用控制策略阻止加载，因此默认重编流程尚未获得完整成功验收；脚本会报错，不会输出成功记录。不要停用系统防护绕过。仅开放代码/文档变化且私有实现未变时，可使用下述显式复用方式；此路径已完整验收。
+
+若仅更新开放代码/配置/README，且确定私有代码与版本都未变化，可显式执行 `py -3.11 tools/release_sdk.py --reuse-binary`，复用output/sdk-full中的原二进制。私有代码或SDK版本改变时必须使用默认重编路径，禁止复用旧二进制。
+
+当前21个允许交付接口及类方法集合固定在 `tools/sdk_public_api.json`；上层新增白名单外的SDK导入会使打包失败，不会自动扩大声明。类方法仅按已批准集合声明，新增方法调用需要维护方同步审查契约。类型依赖保留为下划线辅助声明，数据字段和构造函数按类型需要保留。该约束针对交付声明，不删除pyd运行时原有导出。内部完整声明生成仅供维护验证，打包命令默认固定使用开发指南及精简声明。
+
 ## 快速开始
 
 在项目根目录执行，使用安装了项目依赖的 Python 3.11：
@@ -18,7 +34,7 @@ python main.py
 | 正常启动 | `python main.py` |
 | 空场界面预览，不启动硬件进程 | `python -m model.runtime.qt_preview` |
 | 只读部署自检，不启动界面和硬件进程 | `python main.py --check-deployment` |
-| 编译私有模块为扩展 | `python -m model.build_extensions build_ext --inplace` |
+| 编译私有SDK为扩展（仅内部维护） | `python tools/build_sdk.py` |
 | 全量自动测试 | `python -m unittest discover -s tests -v` |
 | 点云保存专项测试 | `python tests/run_saving_tests.py` |
 | 代码规范检查，需安装 flake8 | `python -m flake8` |
@@ -94,16 +110,9 @@ model/
 ├─ telemetry/                        # 公共状态与队列收集，不依赖 Qt
 │  ├─ UiState.py
 │  └─ RuntimeStateCollector.py
-├─ pointcloud/                       # TXT 导入、共享内存与保存
-│  ├─ PointCloudFileProcess.py
-│  ├─ PointCloudSaveProcess.py
-│  ├─ PointCloudSaveBuffer.py
-│  └─ PointCloudSaveService.py
-├─ lidar/                            # 采数进程、策略与激光驱动
-├─ dataprocess/                      # 点云算法、特征提取、分区与分枪
-├─ plc/                              # 报文定义、序列化及底层通信
+├─ MovingFrameData.py                # 开放的项目 PLC 报文及协议常量
+├─ gun_distributors/                 # 开放的分枪入口和项目规则
 ├─ motionplan/                       # 开放的运动规划与轴映射
-├─ formats/                          # 算法与规划共用的数据结构
 ├─ tomls/                            # 开放配置
 └─ utils/                            # 配置及公共工具
    ├─ ConfigurationService.py
@@ -116,6 +125,8 @@ view/qt/                             # Qt 界面、授权和 OpenGL 点云视图
 ```
 
 旧 `model/plot` 已删除，当前绘图使用 `view/qt/point_cloud_view.py`。旧根目录的 `qt_main.py`、`qt_preview.py`、`app_bootstrap.py`、`deployment_check.py` 已迁入 `model/runtime`，不再保留同名根目录兼容文件。
+
+底层22个实现位于开发源码 `acquisition_sdk/_internal`，上层统一从 `acquisition_sdk` 导入。构建后以单个 `.pyd` 替代SDK源码包；原五个私有目录不再需要。配置仍在 `model/tomls`，其余公开工具仍在 `model/utils`。
 
 调用关系为：Qt 界面 → `ControlCenter` → `PipelineRuntime` → 工作进程；工作进程通过状态队列和公共状态结构向界面反馈。参数显示规则放在 `view/qt`，参数读写和范围校验放在 `model/utils`。详见 [模块目录说明](docs/module-layout.md)。
 
@@ -188,7 +199,7 @@ view/qt/                             # Qt 界面、授权和 OpenGL 点云视图
 
 ## PLC 报文字段
 
-报文源码为 [MovingFrameData.py](model/plc/MovingFrameData.py)，序列化框架为 [PlcFrame.py](model/plc/PlcFrame.py)。当前使用大端序，20 组轴，每组 `Pos/Speed/Status` 均为 Int16。
+报文源码为 [MovingFrameData.py](model/MovingFrameData.py)，通用序列化框架由SDK公开导出 `PlcFrame` 及字段标记。当前使用大端序，20组轴，每组 `Pos/Speed/Status` 均为Int16。报文和协议常量保持开放，可按项目修改。
 
 发送字段顺序：
 
@@ -196,38 +207,39 @@ view/qt/                             # Qt 界面、授权和 OpenGL 点云视图
 | --- | --- | --- | --- |
 | `Operate` | Int32 | 0 | bit0 总使能，bit1～6 左侧内外顶/内外底/二维、右侧内外顶/内外底/二维 |
 | `Gun_cont1` | Int32 | 4 | 保留枪控字 |
-| `Gun_cont2` | Int32 | 8 | 保留枪控字 |
-| `HeartBeat` | Int16 | 12 | 心跳 |
-| `Control` | Int16 | 14 | 远程控制字，bit1 链条运动；规划中还使用 bit15 表示缓存有数据 |
-| `AxisList` | 20 × AxisData | 16 | 轴命令 |
+| `Gun_cont2` | Int16 | 8 | 保留枪控字 |
+| `HeartBeat` | Int16 | 10 | 心跳 |
+| `Control` | Int16 | 12 | 远程控制字，bit1 链条运动；规划中还使用 bit15 表示缓存有数据 |
+| `AxisList` | 20 × AxisData | 14 | 轴命令 |
 
 接收字段顺序为 `ChainPulse(Int32)`、`ChainSpeed(Int32)`、`HeartBeat(Int16)`、`Status(Int16)`、`Operate(Int16)`、`AxisList[20]`。接收 `Operate` 与发送 `Operate` 是各自报文字段，不能只按名称推断用途。
 
-当前发送字段实际序列化为 136 字节、接收为 134 字节，但两类的 `FRAME_SIZE` 常量目前均写为 134。发送端超长时会记录告警并发送实际载荷；此处需要与 PLC 协议核对后统一，README 不将其描述为已一致的固定长度。帧头、帧尾分别为四字节 `02` 和四字节 `03`。修改字段后同步核对字段类型、顺序、序列化长度及 PLC 端定义。
+当前公开源码的发送与接收字段均序列化为134字节，与原 `FRAME_SIZE` 一致；本次仅按已验证源码修正文档表格，不修改报文实现。帧头、帧尾分别为四字节 `02` 和四字节 `03`。修改字段后同步核对字段类型、顺序、序列化长度及PLC端定义。
 
 ## 私有模块构建与团队交付
 
-原根目录 `setup.py` 没有丢失：其构建职责已迁入 [model/build_extensions.py](model/build_extensions.py)，以满足根目录只保留 `main.py` 的目录约定。
+构建入口为 [tools/build_sdk.py](tools/build_sdk.py)，生成固定名称的 `acquisition_sdk` 扩展。旧逐文件Cython构建入口已替换。
 
 在项目根目录执行：
 
 ```powershell
-python -m model.build_extensions build_ext --inplace
+python -m tools.build_sdk --inventory
+python -m tools.build_sdk --developer-env
 ```
 
-构建脚本调用 setuptools/Cython，自动收集以下目录内除 `__init__.py` 外的 Python 模块：
+构建脚本调用本机Nuitka并核对精确清单，包含以下私有实现及SDK包初始化：
 
 ```text
-model/lidar
-model/plc
-model/dataprocess
-model/formats
-model/pointcloud
+acquisition_sdk/_internal/lidar        # 4
+acquisition_sdk/_internal/plc          # 2
+acquisition_sdk/_internal/dataprocess  # 7
+acquisition_sdk/_internal/formats      # 4，包含 FrameQueueManager
+acquisition_sdk/_internal/pointcloud   # 5，包含 PointsFileUtil
 ```
 
-`control`、`view`、`model/motionplan`、公共工具与配置不在此扩展编译清单内。编译需要与目标 Python 和 Windows 架构匹配的 C/C++ 编译工具；该命令生成扩展模块，不生成整套软件的 EXE。
+`control`、`view`、`model/motionplan`、`model/MovingFrameData.py`、全部开放分枪、其余公共工具和配置不编译。命令使用现有VS开发环境并禁用编译缓存，不自动下载工具；目标Python与Windows架构必须匹配。它生成SDK扩展，不生成整套软件EXE。
 
-`build_ext --inplace` 不自动删除私有 `.py` 源码，也不自动筛选交付文件。对团队发布时需另外整理扩展、包初始化文件、依赖、开放源码及 TOML 配置，避免把私有源码一起交付。移动模块或修改报文后应重新编译，避免旧扩展覆盖同名新源码。
+输出默认位于 `output/sdk-full`。开发目录保留SDK源码供维护；发布目录应只保留 `.pyd`、接口声明、开放上层和依赖，不能复制SDK私有源码或构建缓存。报文、分枪和公开工具修改后重启即可使用；私有实现修改后重新构建SDK。完整发布包和类型声明另行验收。
 
 ## 检查与已知事项
 

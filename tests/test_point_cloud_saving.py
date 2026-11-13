@@ -9,8 +9,8 @@ import numpy as np
 
 class BufferTests(unittest.TestCase):
     def setUp(self):
-        self.assertIsNotNone(importlib.util.find_spec("model.pointcloud.PointCloudSaveBuffer"), "shared point cloud buffer is not implemented")
-        from model.pointcloud.PointCloudSaveBuffer import SharedPointCloudPool, PointCloudSaveBuffer
+        self.assertIsNotNone(importlib.util.find_spec("acquisition_sdk._internal.pointcloud.PointCloudSaveBuffer"), "shared point cloud buffer is not implemented")
+        from acquisition_sdk._internal.pointcloud.PointCloudSaveBuffer import SharedPointCloudPool, PointCloudSaveBuffer
         self.pool = SharedPointCloudPool.create(block_bytes=72, block_count=4)
         self.acks = mp.get_context("spawn").Queue()
         self.buffer = PointCloudSaveBuffer(self.pool.descriptor, self.acks)
@@ -29,12 +29,12 @@ class BufferTests(unittest.TestCase):
         self.buffer.append("left", a + 100)
         second = self.buffer.seal("b")
         self.assertTrue(set(b["slot_id"] for b in first["channels"]["left"]).isdisjoint(b["slot_id"] for b in second["channels"]["left"]))
-        from model.pointcloud.PointCloudSaveBuffer import read_blocks
+        from acquisition_sdk._internal.pointcloud.PointCloudSaveBuffer import read_blocks
         actual = np.concatenate(list(read_blocks(self.pool.descriptor, first["channels"]["left"])))
         np.testing.assert_array_equal(actual, a)
 
     def test_full_pool_does_not_overwrite_and_ack_releases_only_matching_job(self):
-        from model.pointcloud.PointCloudSaveBuffer import SaveBufferFull, read_blocks
+        from acquisition_sdk._internal.pointcloud.PointCloudSaveBuffer import SaveBufferFull, read_blocks
         data = np.arange(36, dtype=np.float64).reshape(-1, 3)
         self.buffer.append("combined", data)
         job = self.buffer.seal("a")
@@ -48,7 +48,7 @@ class BufferTests(unittest.TestCase):
         self.assertFalse(self.buffer.acknowledge(ack))
 
     def test_append_is_atomic_when_not_enough_space(self):
-        from model.pointcloud.PointCloudSaveBuffer import SaveBufferFull
+        from acquisition_sdk._internal.pointcloud.PointCloudSaveBuffer import SaveBufferFull
         self.buffer.append("left", np.ones((2, 3)))
         with self.assertRaises(SaveBufferFull):
             self.buffer.append("left", np.ones((20, 3)))
@@ -68,7 +68,7 @@ class BufferTests(unittest.TestCase):
 class WriterTests(BufferTests):
     def setUp(self):
         super().setUp()
-        self.assertIsNotNone(importlib.util.find_spec("model.pointcloud.PointCloudSaveProcess"), "point cloud writer is not implemented")
+        self.assertIsNotNone(importlib.util.find_spec("acquisition_sdk._internal.pointcloud.PointCloudSaveProcess"), "point cloud writer is not implemented")
         self.directory = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent)
 
     def tearDown(self):
@@ -82,7 +82,7 @@ class WriterTests(BufferTests):
         return points, self.buffer.seal("20261012_120000_000001", z_reset_threshold=100, filename_suffix="20261012_120000_000001", incomplete=False)
 
     def test_txt_matches_legacy_normalization_across_blocks(self):
-        from model.pointcloud.PointCloudSaveProcess import save_job
+        from acquisition_sdk._internal.pointcloud.PointCloudSaveProcess import save_job
         points, job = self.make_job()
         save_job(job, self.pool.descriptor, self.directory.name, file_format="txt")
         expected = points.copy()
@@ -94,7 +94,7 @@ class WriterTests(BufferTests):
         self.assertTrue((Path(self.directory.name) / f"{job['job_id']}.complete.json").exists())
 
     def test_continuous_reverse_keeps_absolute_z_and_sorts_entire_channel(self):
-        from model.pointcloud.PointCloudSaveProcess import save_job
+        from acquisition_sdk._internal.pointcloud.PointCloudSaveProcess import save_job
         points = np.array([[3., 20., 98.], [2., 10., 98.], [1., 20., 95.], [9., 2., 50.]])
         self.buffer.append("combined", points)
         job = self.buffer.seal("reverse", strategy="continuous_bidirectional", normalization="absolute_sorted", preview_enabled=True)
@@ -105,7 +105,7 @@ class WriterTests(BufferTests):
         self.assertEqual(preview[0, 2], 50.)
 
     def test_right_origin_transforms_preview_only_and_block_mode_suppresses_preview(self):
-        from model.pointcloud.PointCloudSaveProcess import save_job
+        from acquisition_sdk._internal.pointcloud.PointCloudSaveProcess import save_job
         _, job = self.make_job()
         job["preview_origin_config"] = {"workpiece_origin_side": "right", "workpiece_origin_reference_x": 1540}
         preview = save_job(job, self.pool.descriptor, self.directory.name, file_format="npy")
@@ -116,8 +116,8 @@ class WriterTests(BufferTests):
         self.assertIsNone(preview)
 
     def test_many_fractional_wraps_match_original_algorithm_exactly(self):
-        from model.pointcloud.PointCloudSaveProcess import save_job
-        from model.dataprocess.DataSplitting import DataSplitting
+        from acquisition_sdk._internal.pointcloud.PointCloudSaveProcess import save_job
+        from acquisition_sdk._internal.dataprocess.DataSplitting import DataSplitting
         threshold = 160000 / 5.3
         points = np.column_stack((np.zeros(12), np.zeros(12), np.tile([threshold * .95, 1], 6)))
         self.buffer.append("left", points)
@@ -127,7 +127,7 @@ class WriterTests(BufferTests):
         np.testing.assert_array_equal(result, DataSplitting().normalize_xyz_points(points, threshold))
 
     def test_npy_preserves_precision_and_preview_has_no_fixed_point_limit(self):
-        from model.pointcloud.PointCloudSaveProcess import save_job, make_preview
+        from acquisition_sdk._internal.pointcloud.PointCloudSaveProcess import save_job, make_preview
         points, job = self.make_job()
         preview = save_job(job, self.pool.descriptor, self.directory.name, file_format="npy")
         loaded = np.load(Path(self.directory.name) / f"combined_{job['filename_suffix']}.npy")
@@ -140,7 +140,7 @@ class WriterTests(BufferTests):
         self.assertEqual(len(reduced), 2)
 
     def test_spawn_worker_drains_jobs_and_acknowledges(self):
-        from model.pointcloud.PointCloudSaveProcess import PointCloudSaveProcess
+        from acquisition_sdk._internal.pointcloud.PointCloudSaveProcess import PointCloudSaveProcess
         context = mp.get_context("spawn")
         tasks, statuses = context.Queue(), context.Queue()
         points, job = self.make_job()
@@ -164,7 +164,7 @@ class WriterTests(BufferTests):
                 channel.join_thread()
 
     def test_spawn_write_error_reports_failure_without_ack(self):
-        from model.pointcloud.PointCloudSaveProcess import PointCloudSaveProcess
+        from acquisition_sdk._internal.pointcloud.PointCloudSaveProcess import PointCloudSaveProcess
         context = mp.get_context("spawn")
         tasks, statuses = context.Queue(), context.Queue()
         _, job = self.make_job()
