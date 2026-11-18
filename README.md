@@ -209,7 +209,7 @@ view/qt/                             # Qt 界面、授权和 OpenGL 点云视图
 | `Gun_cont1` | Int32 | 4 | 保留枪控字 |
 | `Gun_cont2` | Int16 | 8 | 保留枪控字 |
 | `HeartBeat` | Int16 | 10 | 心跳 |
-| `Control` | Int16 | 12 | 远程控制字，bit1 链条运动；规划中还使用 bit15 表示缓存有数据 |
+| `Control` | Int16 | 12 | bit0、bit1 固定为 0；bit2 复用原队列有数据判定（按帧检查非零坐标、完整工件检查工件、连续模式检查工位占用），其余位为 0；实际发送值为 0 或 4 |
 | `AxisList` | 20 × AxisData | 14 | 轴命令 |
 
 接收字段顺序为 `ChainPulse(Int32)`、`ChainSpeed(Int32)`、`HeartBeat(Int16)`、`Status(Int16)`、`Operate(Int16)`、`AxisList[20]`。接收 `Operate` 与发送 `Operate` 是各自报文字段，不能只按名称推断用途。

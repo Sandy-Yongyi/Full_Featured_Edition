@@ -33,7 +33,7 @@ class SendMovingFrameData(PlcFrame):
     Gun_cont1: Annotated[int, Int32()] = 0     # 开枪控制1（保留）
     Gun_cont2: Annotated[int, Int16()] = 0     # 开枪控制2（保留）
     HeartBeat: Annotated[int, Int16()] = 0     # 心跳递增：最大值30000 重置0
-    Control: Annotated[int, Int16()] = 0       # 远程操作位（bit1=1链条运动）bit0保留不用
+    Control: Annotated[int, Int16()] = 0       # 远程操作位：bit0、bit1当前固定发0，bit2=粉房有工件数据（沿用原队列判定）；其余位为0
     AxisList: Annotated[list[AxisData], Repeat(AXIS_LIST_COUNT)] = field(default_factory=create_axis_list)
 
 
@@ -48,6 +48,7 @@ class ReceiveMovingFrameData(PlcFrame):
     Status: Annotated[int, Int16()] = 0         # 公共状态位（bit0=1是伺服正常，bit1=1是PC自动模式，bit1=0是PLC点动模式）
     Operate: Annotated[int, Int16()] = 0        # （保留）
     AxisList: Annotated[list[AxisData], Repeat(AXIS_LIST_COUNT)] = field(default_factory=create_axis_list)
+
 
 START = bytes([2, 2, 2, 2])
 END = bytes([3, 3, 3, 3])

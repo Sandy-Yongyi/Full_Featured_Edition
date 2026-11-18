@@ -74,10 +74,7 @@ class MotionFrameByFramePlanning:
         moving_frame.Gun_cont1 = 0
         moving_frame.Gun_cont2 = 0
         moving_frame.HeartBeat = proc.plc_data.HeartBeat
-        moving_frame.Control = 0 if stop_chain else 0x02
-        # bit15 反映全部帧队列中有无非零点云，与设备使能和停链状态无关。
-        if self.cleaning_planner.has_any_frame_data(proc.frame_queue_manager):
-            moving_frame.Control = (moving_frame.Control | 0x8000) - 0x10000  # Int16 保留 bit15，按有符号值序列化。
+        moving_frame.Control = 0x04 if self.cleaning_planner.has_any_frame_data(proc.frame_queue_manager) else 0
         return moving_frame
 
     def _build_auto_mode_enable_and_axes(self, proc, force_disable_all, clean_mode_just_closed, axis_list):

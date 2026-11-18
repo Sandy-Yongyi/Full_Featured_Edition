@@ -128,7 +128,7 @@ class XYServoTests(unittest.TestCase):
         self.assertEqual((0, 0), (frame.Gun_cont1, frame.Gun_cont2))
         restored, _ = type(frame).from_bytes(frame.to_bytes())
         self.assertEqual((7, 7), (restored.AxisList[9].Status, restored.AxisList[19].Status))
-        self.assertEqual(0x8002, restored.Control & 0xFFFF)
+        self.assertEqual(0x0004, restored.Control & 0xFFFF)
 
     def test_pc_auto_status_bit_does_not_trigger_servo_alarm(self):
         self.put(200)

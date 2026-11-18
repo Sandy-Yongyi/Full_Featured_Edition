@@ -30,6 +30,7 @@ class MotionContinuousBidirectionalPlanning:
             proc.continuous_scan_pending = True
 
         self._build_device_safe_motion(proc, moving_frame)
+        moving_frame.Control = 0x04 if self.cleaning_planner.has_any_continuous_workpiece(proc.frame_queue_manager) else 0
         return moving_frame
 
     def _build_device_safe_motion(self, proc, moving_frame: SendMovingFrameData):
