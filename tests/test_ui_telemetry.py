@@ -5,6 +5,41 @@ from unittest.mock import Mock, patch
 
 
 class UiTelemetryTests(unittest.TestCase):
+    def test_qt_alarm_snapshot_reports_lidar_fault_return_and_recovery(self):
+        from control.PipelineRuntime import PipelineRuntime
+        from control.PlcCommunicationProcess import PlcCommunicationProcess
+        from model.utils.UiTelemetry import UiStatusPublisher
+
+        runtime = PipelineRuntime()
+        runtime.ui_status_queue = queue.Queue()
+        process = PlcCommunicationProcess(queue.Queue(), queue.Queue(), queue.Queue())
+        runtime.plc_handler = process
+        process.is_alive = lambda: True
+        process.frame_queue_manager = Mock(active_directions=())
+        process.ui_status = UiStatusPublisher(runtime.ui_status_queue, "plc")
+        process.plc_data = SimpleNamespace(Status=3)
+
+        def alarms(*, safe):
+            with patch.object(PlcCommunicationProcess, "_all_devices_at_safe", return_value=safe):
+                process._publish_ui_status(connected=True, force=True)
+            return runtime.poll()["alarms"]
+
+        self.assertEqual((), alarms(safe=True))
+        process._update_lidar_status(1)
+        self.assertEqual(("激光有遮挡，设备正在回安全位置。",), alarms(safe=False))
+        process.lidar_fault_return_pending = False
+        self.assertEqual(("激光有遮挡，设备已回到安全位置。",), alarms(safe=True))
+
+        process._update_lidar_status(2)
+        self.assertEqual(("激光异常，设备正在回安全位置。",), alarms(safe=False))
+        process.lidar_fault_return_pending = True
+        process._update_lidar_status(0)
+        self.assertEqual(("激光已恢复正常，设备正在回安全位置。",), alarms(safe=False))
+        process.lidar_fault_return_pending = False
+        self.assertEqual(("激光已恢复正常，正在确认工件通过。",), alarms(safe=True))
+        process.lidar_recovery_required = False
+        self.assertEqual(("激光已恢复正常。",), alarms(safe=True))
+
     def test_servo_and_mode_decode_independent_bits_and_expire(self):
         from control.PipelineRuntime import PipelineRuntime
         runtime = PipelineRuntime()

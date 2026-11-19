@@ -191,6 +191,7 @@ class FrameByFrameStrategy(AcquisitionStrategy):
             if proc._stop_requested():
                 break
             _, _, status = proc._update_pulse_data()
+            proc._apply_lidar_recovery_request()
 
             if status == "moving_forward":
                 if not proc.movement_detected:
@@ -210,9 +211,6 @@ class FrameByFrameStrategy(AcquisitionStrategy):
                 # 首启跳过模式中，不退出循环，重置扫描状态后继续监测下一个工件
                 if proc.fbf_skipping_workpiece or proc.fbf_skip_complete:
                     logger.info("[FrameByFrame StartupGuard] Skipped workpiece cycle ended, continuing monitoring")
-                    if proc.fbf_skipping_workpiece:
-                        proc.fbf_skipping_workpiece = False
-                        proc.fbf_skip_complete = True
                     proc.finish_test = False
                     proc.movement_detected = False
                     proc.all_xyz_data = np.empty((0, 3))
@@ -263,15 +261,16 @@ class FrameByFrameStrategy(AcquisitionStrategy):
                     proc.software_first_start = False
                     logger.info(f"[FrameByFrame StartupGuard] Normal start beyond skip zone. moved_mm={moved_mm:.1f}")
 
-        # ---- 跳过模式：不发送帧，等待工件离开（连续100帧空数据） ----
+        # ---- 跳过模式：不发送帧，等待工件离开（默认连续100次空采样） ----
         if proc.fbf_skipping_workpiece:
             all_empty = all((darr is None) or (isinstance(darr, np.ndarray) and darr.size == 0) or (isinstance(darr, list) and len(darr) == 0) for darr in direction_data.values())
             if all_empty:
                 proc.fbf_empty_frame_count += 1
-                if proc.fbf_empty_frame_count >= 100:
+                empty_frames = max(1, int(proc.read_data_config.get("start_skip_empty_frames", 100)))
+                if proc.fbf_empty_frame_count >= empty_frames:
                     proc.fbf_skipping_workpiece = False
                     proc.fbf_skip_complete = True
-                    logger.info("[FrameByFrame StartupGuard] 100 consecutive empty frames, workpiece passed")
+                    logger.info(f"[FrameByFrame StartupGuard] {empty_frames} consecutive empty frames, workpiece passed")
             else:
                 proc.fbf_empty_frame_count = 0
             proc._push_lidar_status_update()

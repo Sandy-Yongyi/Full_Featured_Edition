@@ -296,7 +296,27 @@ class PipelineRuntime:
             DeviceState("激光", lidar_online, lidar_detail),
             DeviceState("伺服", servo_ready, servo_detail),
         )
-        snapshot["alarms"] = tuple(self._faults[-10:])
+        alarms = tuple(self._faults[-10:])
+        if plc_online and self.strategy_name == "frame_by_frame":
+            lidar_status = plc_feedback.get("lidar_status")
+            fault_text = {1: "激光有遮挡", 2: "激光异常", 3: "激光断连"}.get(lidar_status)
+            returning = plc_feedback.get("lidar_fault_return_pending", False)
+            if fault_text:
+                if snapshot["all_devices_safe"] and not returning:
+                    lidar_notice = f"{fault_text}，设备已回到安全位置。"
+                elif servo_ready:
+                    lidar_notice = f"{fault_text}，设备正在回安全位置。"
+                else:
+                    lidar_notice = f"{fault_text}，等待确认设备安全位置。"
+                alarms = (lidar_notice,) + alarms
+            elif lidar_status == 0 and plc_feedback.get("lidar_recovered"):
+                lidar_notice = "激光已恢复正常，设备正在回安全位置。" if returning and servo_ready else (
+                    "激光已恢复正常，等待确认设备安全位置。" if returning else "激光已恢复正常。"
+                )
+                if not returning and plc_feedback.get("lidar_recovery_required"):
+                    lidar_notice = "激光已恢复正常，正在确认工件通过。"
+                alarms = (lidar_notice,) + alarms
+        snapshot["alarms"] = alarms
         return snapshot
 
     def save_chain_speed(self, speed: int) -> None:

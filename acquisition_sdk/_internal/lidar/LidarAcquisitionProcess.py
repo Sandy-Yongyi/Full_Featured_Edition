@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict
 from model.utils.TomlLoader import TomlLoader
+from model.utils.FrameFifoConfig import get_frame_fifo_step_mm
 from acquisition_sdk._internal.lidar.LidarCommon import LidarManager
 from acquisition_sdk._internal.dataprocess.DataSplitting import DataSplitting
 from model.utils.LoggerUtil import logger, check_and_rotate_log
@@ -146,7 +147,8 @@ class LidarAcquisitionProcess(multiprocessing.Process):
         """基于 pulse 重置阈值推导 chaincountcm 的最大值。"""
         max_pulse = float(self.read_data_config.get("max_pulse", 160000) or 160000)
         pulse_to_mm = float(self.read_data_config.get("pulse_to_mm", 1) or 1)
-        return max(1, int(round(max_pulse / pulse_to_mm / 10)))
+        step_mm = get_frame_fifo_step_mm(self.read_data_config)
+        return max(1, int(round(max_pulse / pulse_to_mm / step_mm)))
 
     def _is_next_fifo(self, last_fifo: int, current_fifo: int) -> bool:
         """判断 chaincountcm 是否按 pulse 回绕规则前进 1。"""
@@ -456,7 +458,10 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                 f"Lidar status recovered from {old_status} to 0"
                 f"{f' ({source})' if source else ''}, rearm startup guard"
             )
-            self._rearm_startup_guard_after_lidar_recovery()
+            if not getattr(self, "_plc_manages_lidar_recovery", False):
+                self._rearm_startup_guard_after_lidar_recovery()
+        elif new_status in (1, 2, 3) and getattr(self, "_plc_manages_lidar_recovery", False):
+            self._waiting_for_lidar_recovery = True
 
     def _publish_ui_status(self, status: int, force: bool = False):
         publisher = getattr(self, "ui_status", None)
@@ -547,6 +552,9 @@ class LidarAcquisitionProcess(multiprocessing.Process):
                 self.current_fifo = fifo_value
 
             self.current_status = latest_pulse_data.get("status", "stopped")
+            if is_frame_by_frame_mode(self.strategy_name) and "lidar_recovery" in latest_pulse_data:
+                self._plc_manages_lidar_recovery = True
+                self._lidar_recovery_request = latest_pulse_data["lidar_recovery"]
 
         # 检测从断连状态恢复
         if was_disconnected and not self.plc_disconnected:
@@ -556,6 +564,20 @@ class LidarAcquisitionProcess(multiprocessing.Process):
             logger.info("PLC reconnected")
         # logger.debug(f"Updated pulse data: pulse={self.current_pulse}, fifo={getattr(self, 'current_fifo', 'N/A')}, status={self.current_status}")
         return self.current_pulse, getattr(self, "current_fifo", 0), self.current_status
+
+    def _apply_lidar_recovery_request(self):
+        """只在原始采样之间切换批次，避免给采到一半的帧标记新批次。"""
+        request = getattr(self, "_lidar_recovery_request", None)
+        if request is None or self.lidar_status != 0:
+            return
+        epoch, start_pulse = request
+        if epoch <= getattr(self, "lidar_recovery_epoch", 0):
+            return
+        self._reset_base()
+        self._rearm_startup_guard_after_lidar_recovery()
+        self.start_motion_pulse = start_pulse
+        self.lidar_recovery_epoch = epoch
+        self._waiting_for_lidar_recovery = False
 
     def _capture_frame(self):
         """采集一帧数据"""
@@ -605,6 +627,11 @@ class LidarAcquisitionProcess(multiprocessing.Process):
         # 更新全局扫描活跃状态
         self.any_scanning_active = any(state.scanning_started for state in self.direction_states.values())
         self._handle_lidar_status_transition(self.lidar_status, source="capture")
+        if is_frame_by_frame_mode(self.strategy_name) and (
+            self.lidar_status != 0 or getattr(self, "_waiting_for_lidar_recovery", False)
+        ):
+            self._push_lidar_status_update()
+            return
 
         # 逐帧发送方向数据（FrameByFrame策略在此处调用send_data_to_queue）
         self.strategy.send_direction_data(self, direction_data)
@@ -919,6 +946,8 @@ class LidarAcquisitionProcess(multiprocessing.Process):
         fifo_data = {
             "fifo": real_fifo_key,
             "repeat_count": repeat_count,
+            # 首启判断完成后，PLC 才能用本轮帧解除回位保护。
+            "lidar_recovery_epoch": 0 if getattr(self, "software_first_start", False) else getattr(self, "lidar_recovery_epoch", 0),
             "lidar_status": int(self.lidar_status),
             "plc_generation": int(self.plc_connection_generation),
         }

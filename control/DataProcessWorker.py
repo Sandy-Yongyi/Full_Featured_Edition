@@ -9,6 +9,7 @@ from contextlib import nullcontext
 from acquisition_sdk import DataSplitting
 from model.utils.LoggerUtil import logger
 from model.utils.TomlLoader import TomlLoader
+from model.utils.FrameFifoConfig import get_frame_fifo_step_mm
 from model.utils.LidarDirectionUtil import ALL_DIRECTIONS, get_active_directions
 from model.utils.StrategyUtil import is_complete_workpiece_mode, is_frame_by_frame_mode, validate_strategy_name
 from model.utils.WorkpieceOriginUtil import get_origin_side, transform_points_for_origin
@@ -56,7 +57,8 @@ class DataProcessWorker(multiprocessing.Process):
         """基于 pulse 重置阈值推导 chaincountcm 的最大值。"""
         max_pulse = float(self.read_data_config.get("max_pulse", 160000) or 160000)
         pulse_to_mm = float(self.read_data_config.get("pulse_to_mm", 1) or 1)
-        return max(1, int(round(max_pulse / pulse_to_mm / 10)))
+        step_mm = get_frame_fifo_step_mm(self.read_data_config)
+        return max(1, int(round(max_pulse / pulse_to_mm / step_mm)))
 
     def _heartbeat_guard(self):
         heartbeat = getattr(self, "_heartbeat", None)
@@ -305,19 +307,12 @@ class DataProcessWorker(multiprocessing.Process):
         if data.shape[1] < 3:
             return []
 
-        z_threshold = int(
-            self.read_data_config.get(
-                "z_threshold",
-                self.process_config.get("z_threshold", 10),
-            )
-            or 0
-        )
-        if z_threshold <= 0:
-            raise ValueError(f"z_threshold must be greater than 0, current value: {z_threshold}")
+        legacy_step = self.read_data_config.get("z_threshold", self.process_config.get("z_threshold", 10))
+        step_mm = get_frame_fifo_step_mm(self.read_data_config, default=legacy_step)
 
         points = data[:, :3]
         relative_z = points[:, 2] - np.min(points[:, 2])
-        z_bins = np.floor(relative_z / z_threshold).astype(int)
+        z_bins = np.floor(relative_z / step_mm).astype(int)
         max_z_bin = int(np.max(z_bins))
         frames = []
         for z_bin in range(max_z_bin + 1):

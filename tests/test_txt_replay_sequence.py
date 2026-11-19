@@ -28,6 +28,25 @@ class TxtReplaySequenceTests(unittest.TestCase):
     def write(self, name, x):
         (self.root / name).write_text(f"{x} 100 0\n", encoding="utf-8")
 
+    def test_configured_fifo_step_aligns_live_and_replay_frames(self):
+        import numpy as np
+        from acquisition_sdk import LidarAcquisitionProcess
+        from control.PlcCommunicationProcess import PlcCommunicationProcess
+        from model.utils.TomlLoader import TomlLoader
+
+        TomlLoader.save({"frame_fifo_step_mm": 5, "max_pulse": 100, "pulse_to_mm": 1},
+                        str(self.config / "ReadDataConfig.toml"))
+        worker = self.worker()
+        plc = PlcCommunicationProcess(queue.Queue(), queue.Queue(), queue.Queue())
+        plc.read_data_config = worker.read_data_config
+        plc.max_pulse = 100
+        self.assertEqual(3, plc._pulse_to_chaincountcm(15))
+        self.assertEqual(20, plc._resolve_max_fifo())
+        self.assertEqual(20, worker.max_fifo)
+        self.assertEqual(20, LidarAcquisitionProcess._get_max_chaincountcm(worker))
+        groups = worker._split_points_into_frames(np.array([[1, 100, 0], [2, 100, 4], [3, 100, 5]]))
+        self.assertEqual([2, 1], [len(group) for group in groups])
+
     def test_frame_replay_advances_through_all_datasets_without_resetting_plc_fifo(self):
         self.write("combined_10.txt", 10)
         self.write("combined_2.txt", 2)

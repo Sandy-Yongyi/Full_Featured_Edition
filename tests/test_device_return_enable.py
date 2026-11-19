@@ -18,6 +18,77 @@ class ReturnEnableTests(unittest.TestCase):
                                device_returning_to_origin={2: False}, device_origin_complete={2: False}, frame_queue_manager=queues, mode_config={"spray_mode": 0},
                                lidar_status=0, raw_data_timeout_active=False)
 
+    def test_lidar_fault_clears_queues_and_gates_each_device_on_its_own_x(self):
+        from queue import Queue
+        from unittest.mock import Mock
+        from acquisition_sdk import AxisFrameData
+        from control.PlcCommunicationProcess import PlcCommunicationProcess
+
+        fixture = self.make_proc()
+        raw = Queue()
+        proc = PlcCommunicationProcess(raw, Queue(), Queue())
+        proc.machine_config = {
+            "2": fixture.machine_config["2"],
+            "5": {**fixture.machine_config["2"], "sn": 5, "install_orietation": "right"},
+        }
+        proc.num_devices = 6
+        proc.max_fifo = 100
+        proc.plc_data = fixture.plc_data
+        proc.device_enable_mask = 1
+        proc.frame_queue_manager = Mock(active_directions=("left", "right"), frame_stack={})
+        planner = MotionFrameByFramePlanning()
+        proc.plc_data.AxisList[9].Pos = 0
+        proc.plc_data.AxisList[18].Pos = 120
+        proc.plc_data.AxisList[19].Pos = 130
+        raw.put({"lidar_status": 1, "left": AxisFrameData()})
+        raw.put({"lidar_status": 0, "right": AxisFrameData()})
+
+        proc._process_frame_data()
+        self.assertTrue(raw.empty())
+        self.assertEqual(["left", "right"], [call.args[0] for call in proc.frame_queue_manager.clear.call_args_list])
+        proc.frame_queue_manager.push_frame.assert_not_called()
+        self.assertEqual(0, proc.lidar_status)
+
+        frame = planner.build_moving_frame(proc)
+        self.assertEqual(0x49, frame.Operate & 0x7F)
+        self.assertEqual((0, 120), (frame.AxisList[8].Pos, frame.AxisList[18].Pos))
+        self.assertGreater(frame.AxisList[8].Speed, 0)
+        self.assertTrue(proc.lidar_fault_return_pending)
+
+        raw.put({"lidar_status": 0, "left": AxisFrameData()})
+        proc._process_frame_data()
+        proc.frame_queue_manager.push_frame.assert_not_called()
+
+        proc.plc_data.AxisList[19].Pos = 0
+        frame = planner.build_moving_frame(proc)
+        self.assertEqual((0, 0), (frame.AxisList[8].Pos, frame.AxisList[18].Pos))
+        self.assertGreater(frame.AxisList[8].Speed, 0)
+        self.assertGreater(frame.AxisList[18].Speed, 0)
+
+        proc.plc_data.AxisList[8].Pos = proc.plc_data.AxisList[18].Pos = 0
+        frame = planner.build_moving_frame(proc)
+        self.assertFalse(proc.lidar_fault_return_pending)
+        self.assertEqual(1, frame.Operate & 0x7F)
+        proc.plc_data.ChainPulse = 390
+        empty = AxisFrameData()
+        raw.put({"lidar_status": 0, "fifo": 40, "left": empty, "right": empty})
+        raw.put({"lidar_status": 0, "fifo": 41, "left": empty, "right": empty,
+                 "lidar_recovery_epoch": 0})
+        proc._process_frame_data()
+        self.assertTrue(proc.lidar_recovery_required)
+        self.assertEqual(39, proc.last_synced_chain_fifo)
+        proc.frame_queue_manager.push_frame.assert_not_called()
+
+        self.assertEqual((1, 390), proc.pulse_queue.get_nowait()["lidar_recovery"])
+        raw.put({"lidar_status": 0, "fifo": 45, "left": empty, "right": empty,
+                 "lidar_recovery_epoch": 1})
+        proc._process_frame_data()
+        self.assertFalse(proc.lidar_recovery_required)
+        self.assertEqual(2, proc.frame_queue_manager.push_frame.call_count)
+        self.assertEqual(1, proc.current_cycle_raw_shift_steps)
+        self.assertEqual(45, proc.last_raw_frame_fifo)
+        self.assertFalse(proc.raw_data_timeout_active)
+
     def test_closing_request_keeps_enable_until_both_axes_reach_safe(self):
         for planner_type in (MotionFrameByFramePlanning, MotionCompleteWorkpiecePlanning):
             for closed_mask in (1, 0):

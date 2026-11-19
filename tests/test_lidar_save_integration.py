@@ -11,6 +11,59 @@ from acquisition_sdk._internal.pointcloud.PointCloudSaveBuffer import PointCloud
 
 
 class AcquisitionSavingTests(unittest.TestCase):
+    def test_recovery_rearms_at_plc_pulse_and_waits_for_configured_empty_scans(self):
+        from unittest.mock import Mock
+        from acquisition_sdk._internal.lidar.LidarAcquisitionStrategies import FrameByFrameStrategy
+
+        proc = self.process
+        proc.direction_states = {}
+        proc.cm_accum = {1: {}}
+        proc.current_pulse = 12
+        proc.current_status = "moving_forward"
+        proc.lidar_status = 1
+        proc._lidar_recovery_request = (1, 10)
+        proc._waiting_for_lidar_recovery = True
+        proc.read_data_config.update(start_skip_mm=20, start_skip_empty_frames=3)
+        proc._push_lidar_status_update = Mock()
+        proc.send_data_to_queue = Mock()
+        strategy = FrameByFrameStrategy(proc.read_data_config)
+        empty = {"left": np.empty((0, 3)), "right": np.empty((0, 3))}
+        occupied = {**empty, "right": np.ones((1, 3))}
+
+        proc._apply_lidar_recovery_request()
+        self.assertTrue(proc._waiting_for_lidar_recovery)
+        proc.lidar_status = 0
+        proc._apply_lidar_recovery_request()
+        self.assertFalse(proc._waiting_for_lidar_recovery)
+        self.assertEqual(10, proc.start_motion_pulse)
+        self.assertEqual({}, proc.cm_accum)
+        self.assertEqual(1, proc.lidar_recovery_epoch)
+
+        strategy.send_direction_data(proc, empty)
+        proc.send_data_to_queue.assert_called_once_with(empty)
+        proc.send_data_to_queue.reset_mock()
+        strategy.send_direction_data(proc, occupied)
+        for scan in (empty, empty, occupied, empty, empty):
+            strategy.send_direction_data(proc, scan)
+        self.assertTrue(proc.fbf_skipping_workpiece)
+        proc.send_data_to_queue.assert_not_called()
+
+        strategy.send_direction_data(proc, empty)
+        self.assertTrue(proc.fbf_skip_complete)
+        strategy.send_direction_data(proc, empty)
+        proc.send_data_to_queue.assert_not_called()
+        strategy.send_direction_data(proc, occupied)
+        proc.send_data_to_queue.assert_called_once_with(occupied)
+
+        proc._lidar_recovery_request = (2, 20)
+        proc._apply_lidar_recovery_request()
+        proc.current_pulse = 41
+        strategy.send_direction_data(proc, empty)
+        self.assertTrue(proc.software_first_start)
+        strategy.send_direction_data(proc, occupied)
+        self.assertFalse(proc.software_first_start)
+        self.assertEqual(3, proc.send_data_to_queue.call_count)
+
     def test_missing_buffer_is_reported_before_capturing(self):
         self.process.save_buffer = None
         with self.assertRaisesRegex(RuntimeError, "save buffer is not initialized"):

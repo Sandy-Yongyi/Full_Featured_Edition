@@ -5,10 +5,12 @@ import copy
 import math
 import queue
 import multiprocessing
+from queue import Empty
 from typing import Any, cast
 from model.utils.LoggerUtil import check_and_rotate_log, logger
 from acquisition_sdk import PlcManager
 from model.utils.TomlLoader import TomlLoader
+from model.utils.FrameFifoConfig import get_frame_fifo_step_mm
 from model.MovingFrameData import ReceiveMovingFrameData, SendMovingFrameData
 from acquisition_sdk import FrameQueueManager
 from acquisition_sdk import BlockData
@@ -84,6 +86,11 @@ class PlcCommunicationProcess(multiprocessing.Process):
         self.pulse_history = []
         self.chain_motion_status = "stopped"
         self.lidar_status = 0
+        self.lidar_recovered = False
+        self.lidar_fault_return_pending = False
+        self.lidar_recovery_required = False
+        self._lidar_recovery_epoch = 0
+        self._lidar_recovery_request = None
         self.last_lidar_status_log_time = 0.0
         self.last_synced_chain_fifo = None
         self.current_cycle_raw_shift_steps = 0
@@ -127,7 +134,8 @@ class PlcCommunicationProcess(multiprocessing.Process):
     def _pulse_to_chaincountcm(self, pulse):
         """将 pulse 换算为 chaincountcm。"""
         pulse_to_mm = float(self.pulse_to_mm or 1)
-        return int(round(float(pulse) / pulse_to_mm / 10))
+        step_mm = get_frame_fifo_step_mm(self.read_data_config)
+        return int(round(float(pulse) / pulse_to_mm / step_mm))
 
     def _resolve_max_fifo(self):
         """基于 pulse 重置阈值推导 chaincountcm 的最大值。"""
@@ -457,6 +465,10 @@ class PlcCommunicationProcess(multiprocessing.Process):
             chain_speed_mm_s=float(getattr(data, "ChainSpeed", 0) or 0),
             plc_status=int(data.Status) if data is not None and hasattr(data, "Status") else None,
             all_devices_safe=PlcCommunicationProcess._all_devices_at_safe(self) if connected else False,
+            lidar_status=getattr(self, "lidar_status", 0),
+            lidar_fault_return_pending=getattr(self, "lidar_fault_return_pending", False),
+            lidar_recovered=getattr(self, "lidar_recovered", False),
+            lidar_recovery_required=getattr(self, "lidar_recovery_required", False),
             device_enable_mask=int(getattr(self, "device_enable_mask", 0)),
             device_enable_request_id=getattr(self, "_enable_request_id", None),
             device_enable_error=getattr(self, "_enable_error", ""),
@@ -510,11 +522,15 @@ class PlcCommunicationProcess(multiprocessing.Process):
             if status in ("moving_forward", "moving_reverse") and last_status == "stopped":
                 self._reset_raw_data_timeout_timer(fifo=fifo)
         logger.info(f"PLC chain status changed: pulse={pulse}, fifo={fifo}, status={status}")
+        self._publish_chain_state(fifo, pulse, status)
+
+    def _publish_chain_state(self, fifo, pulse, status):
         self.pulse_queue.put({
             "pulse": pulse,
             "fifo": fifo,
             "status": status,
             "plc_generation": self.plc_connection_generation,
+            "lidar_recovery": self._lidar_recovery_request,
         })
 
     def _update_lidar_status_from_packet(self, fifo_data: dict):
@@ -522,18 +538,27 @@ class PlcCommunicationProcess(multiprocessing.Process):
             self._update_lidar_status(int(fifo_data.get("lidar_status", 0) or 0))
 
     def _should_skip_raw_packet(self) -> bool:
-        return int(getattr(self, "lidar_status", 0) or 0) in (1, 2, 3)
+        return self.lidar_status in (1, 2, 3) or self.lidar_fault_return_pending
 
     def _process_frame_data(self):
-        """frame_by_frame / continuous_bidirectional 模式处理激光采集队列。"""
+        """逐帧处理激光采集队列。"""
+        if self.lidar_recovery_required and not self._should_skip_raw_packet():
+            self._start_lidar_recovery_if_needed()
         try:
-            while not self.raw_data_queue.empty():
-                fifo_data = self.raw_data_queue.get_nowait()
+            while True:
+                try:
+                    fifo_data = self.raw_data_queue.get_nowait()
+                except Empty:
+                    break
                 if not isinstance(fifo_data, dict):
                     continue
                 self._update_lidar_status_from_packet(fifo_data)
                 if self._should_skip_raw_packet():
                     continue
+                if self.lidar_recovery_required:
+                    self._start_lidar_recovery_if_needed()
+                    if fifo_data.get("lidar_recovery_epoch") != self._lidar_recovery_epoch or "fifo" not in fifo_data:
+                        continue
                 if self._should_drop_reconnect_raw_packet(fifo_data):
                     continue
                 if bool(fifo_data.get("reset_queue", False)):
@@ -550,9 +575,28 @@ class PlcCommunicationProcess(multiprocessing.Process):
                     if direction == "left":
                         logger.debug(f"get raw_data_queue fifo is {fifo_data.get('fifo', 1)}")
                 if frame_packet_received:
+                    if self.lidar_recovery_required:
+                        self.lidar_recovery_required = False
+                        self.last_synced_chain_fifo = int(fifo_data["fifo"])
+                        logger.info("采集端已完成工件确认，恢复逐帧入队")
                     self._handle_frame_packet_received(fifo_data, repeat_count)
         except Exception as e:
             logger.error(f"Error processing raw data from queue: {e}")
+
+    def _start_lidar_recovery_if_needed(self):
+        if self._lidar_recovery_request is not None:
+            return
+        pulse = self.plc_data.ChainPulse
+        self._clear_all_frame_queues()
+        self.last_synced_chain_fifo = self._pulse_to_chaincountcm(pulse)
+        self.reconnect_raw_packet_floor_fifo = None
+        self.current_cycle_raw_shift_steps = 0
+        self.last_raw_frame_fifo = None
+        self.last_operate_state = 0
+        self._reset_raw_data_timeout_timer()
+        self._lidar_recovery_request = (self._lidar_recovery_epoch, pulse)
+        self._publish_chain_state(self.last_synced_chain_fifo, pulse, self.chain_motion_status)
+        logger.info("激光和设备已就绪，请求采集端重置并确认工件")
 
     def _should_drop_reconnect_raw_packet(self, fifo_data: dict) -> bool:
         """重连补空后丢弃不晚于同步基准的旧包，避免队列被再次推进。"""
@@ -711,6 +755,10 @@ class PlcCommunicationProcess(multiprocessing.Process):
             return
 
         current_fifo = int(getattr(self.plc_data, "ChainCountCM", 0) or 0)
+        if self._should_skip_raw_packet() or self.lidar_recovery_required:
+            self.last_synced_chain_fifo = current_fifo
+            self.current_cycle_raw_shift_steps = 0
+            return
         if self.last_synced_chain_fifo is None:
             self.last_synced_chain_fifo = current_fifo
             return
@@ -746,7 +794,7 @@ class PlcCommunicationProcess(multiprocessing.Process):
         current_fifo = int(getattr(self.plc_data, "ChainCountCM", 0) or 0)
         previous_fifo = self.last_synced_chain_fifo
         gap = 0 if previous_fifo is None else self._get_fifo_step_delta(previous_fifo, current_fifo)
-        if gap > 0:
+        if gap > 0 and not self._should_skip_raw_packet() and not self.lidar_recovery_required:
             self._push_empty_frames(gap)
             logger.warning(
                 f"PLC reconnect fifo gap filled with empty frames: last_synced={previous_fifo}, "
@@ -845,6 +893,45 @@ class PlcCommunicationProcess(multiprocessing.Process):
             logger.error(msg)
 
     def _update_lidar_status(self, new_status: int):
+        """更新激光状态，并按要求输出节流日志。"""
+        if is_complete_workpiece_mode(self.strategy_name):
+            self._update_workpiece_lidar_status(new_status)
+            return
+        new_status = int(new_status or 0)
+        old_status = int(getattr(self, "lidar_status", 0) or 0)
+        self.lidar_status = new_status
+
+        if new_status in (1, 2, 3):
+            self.lidar_recovered = False
+            if old_status not in (1, 2, 3):
+                self._clear_all_frame_queues()
+                self.lidar_fault_return_pending = True
+                self.lidar_recovery_required = True
+                self._lidar_recovery_epoch += 1
+                self._lidar_recovery_request = None
+                self.current_cycle_raw_shift_steps = 0
+                self.last_raw_frame_fifo = None
+            now = time.time()
+            if new_status != old_status:
+                self.last_lidar_status_log_time = 0.0
+            if now - self.last_lidar_status_log_time >= 10:
+                if new_status == 1:
+                    msg = "激光有遮挡，已清空数据队列并请求所有设备回安全位"
+                elif new_status == 2:
+                    msg = "激光异常，已清空数据队列并请求所有设备回安全位"
+                else:
+                    msg = "激光断连，已清空数据队列并请求所有设备回安全位"
+                print(msg)
+                logger.warning(msg)
+                self.last_lidar_status_log_time = now
+        elif new_status == 0 and old_status in (1, 2, 3):
+            self.lidar_recovered = True
+            msg = "激光状态恢复正常，等待设备回位及工件确认"
+            print(msg)
+            logger.info(msg)
+            self.last_lidar_status_log_time = 0.0
+
+    def _update_workpiece_lidar_status(self, new_status: int):
         """更新激光状态，并按要求输出节流日志。"""
         new_status = int(new_status or 0)
         old_status = int(getattr(self, "lidar_status", 0) or 0)

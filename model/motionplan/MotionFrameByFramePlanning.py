@@ -42,7 +42,12 @@ class MotionFrameByFramePlanning:
         force_disable_all = (not plc_enable) or servo_alarm or lidar_abnormal or raw_data_timeout
         stop_chain = lidar_abnormal or raw_data_timeout
 
-        if self._has_machine_type(proc.machine_config, "out_lift"):
+        lidar_interlock = (
+            lidar_abnormal
+            or getattr(proc, "lidar_fault_return_pending", False)
+            or getattr(proc, "lidar_recovery_required", False)
+        )
+        if not lidar_interlock and self._has_machine_type(proc.machine_config, "out_lift"):
             self._handle_out_lift(proc, moving_frame)
 
         clean_mode_enabled, clean_mode_ready = self._resolve_clean_mode_state(proc, force_disable_all)
@@ -50,7 +55,9 @@ class MotionFrameByFramePlanning:
         if clean_mode_enabled and clean_mode_ready:
             stop_chain = True
 
-        if clean_mode_enabled:
+        if lidar_interlock:
+            enable_value = self._build_lidar_fault_return(proc, axis_list, servo_alarm)
+        elif clean_mode_enabled:
             self.inout_up_planner.reset_motion_state()
             self.inout_down_planner.reset_motion_state()
             enable_value = self._build_clean_mode_enable_and_axes(proc, clean_mode_ready, axis_list)
@@ -76,6 +83,49 @@ class MotionFrameByFramePlanning:
         moving_frame.HeartBeat = proc.plc_data.HeartBeat
         moving_frame.Control = 0x04 if self.cleaning_planner.has_any_frame_data(proc.frame_queue_manager) else 0
         return moving_frame
+
+    def _build_lidar_fault_return(self, proc, axis_list, servo_alarm):
+        devices = [
+            (sn, cfg) for sn in range(proc.num_devices)
+            if (cfg := proc.machine_config.get(str(sn))) and cfg.get("type") != "out_lift"
+        ]
+        enable_value = 0
+        complete = True
+        for sn, cfg in devices:
+            self._reset_device_motion_state(sn, cfg.get("type", ""))
+            if servo_alarm:
+                commands, ready = self.motion_to_target.hold_current_position(cfg, proc.plc_data), False
+            else:
+                commands, ready = self.motion_to_target.move_to_origin_safe(
+                    cfg, proc.runtime_machine_config.get(sn, {}), proc.plc_data
+                )
+                if not ready:
+                    enable_value |= 1 << (sn + 1)
+            proc.device_origin_complete[sn] = ready
+            proc.device_returning_to_origin[sn] = not ready
+            complete = complete and ready
+            if commands:
+                apply_device_axes_to_list(proc.machine_config, sn, commands, axis_list)
+
+        proc.lidar_fault_return_pending = not complete
+        return enable_value
+
+    def _reset_device_motion_state(self, sn, machine_type):
+        if machine_type == "inout_up":
+            self.inout_up_planner.reset_motion_state(sn)
+        elif machine_type == "inout_down":
+            self.inout_down_planner.reset_motion_state(sn)
+        elif machine_type == "H2D_XYservo":
+            self.xy_servo_planner.reset_motion_state(sn)
+        elif machine_type == "out_fx":
+            self.out_fx_planner.reset_motion_state(sn)
+            self.manual_out_fx_planner.reset_motion_state(sn)
+        elif machine_type == "out_2d_servo":
+            self.out_2d_servo_planner.reset_motion_state(sn)
+        elif machine_type == "xn_updown2":
+            self.xn_updown2_planner.reset_motion_state(sn)
+        elif machine_type == "xn_updown4":
+            self.xn_updown4_planner.reset_motion_state(sn)
 
     def _build_auto_mode_enable_and_axes(self, proc, force_disable_all, clean_mode_just_closed, axis_list):
         """自动模式逐设备规划；故障时通过关闭有效设备位进入安全返回。"""
